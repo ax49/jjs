@@ -400,6 +400,56 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 local originalSizes = {}
+local originalAttributes = setmetatable({}, {__mode = "k"})
+local statTrackedInstances = setmetatable({}, {__mode = "k"})
+local abilityTrackedInstances = setmetatable({}, {__mode = "k"})
+local STAT_CHARACTER_ATTRIBUTES = {"DashRegenTime", "Cooldown", "UtilityBoost", "AggroMultiplier"}
+local STAT_TOOL_ATTRIBUTES = {"Firerate", "Swingrate", "LungeRate", "OffhandSwingRate", "Windup", "ChargeRate", "ChargeTime", "Cooldown", "Spread", "Lifesteal"}
+local ABILITY_ATTRIBUTES = {"DashRegenTime", "MaxDashes", "Dashes"}
+
+local function RememberAttributes(instance, names)
+    if not instance then return end
+    local snapshot = originalAttributes[instance]
+    if not snapshot then
+        snapshot = {}
+        originalAttributes[instance] = snapshot
+    end
+    for _, name in ipairs(names) do
+        if snapshot[name] == nil then
+            snapshot[name] = { value = instance:GetAttribute(name) }
+        end
+    end
+end
+
+local function RestoreAttributes(instance, names)
+    local snapshot = instance and originalAttributes[instance]
+    if not snapshot then return end
+    pcall(function()
+        for _, name in ipairs(names) do
+            local saved = snapshot[name]
+            if saved ~= nil then
+                instance:SetAttribute(name, saved.value)
+            end
+        end
+    end)
+end
+
+local function TrackStatInstance(instance, names)
+    RememberAttributes(instance, names)
+    statTrackedInstances[instance] = names
+end
+
+local function TrackAbilityInstance(instance)
+    RememberAttributes(instance, ABILITY_ATTRIBUTES)
+    abilityTrackedInstances[instance] = ABILITY_ATTRIBUTES
+end
+
+local function RestoreTrackedAttributes(tracked)
+    for instance, names in pairs(tracked) do
+        RestoreAttributes(instance, names)
+    end
+    table.clear(tracked)
+end
 
 -- =====================
 -- STAT MODIFIER (your own character + held tool only)
@@ -408,6 +458,7 @@ local function ApplyStatMod()
     local character = LocalPlayer.Character
     if not character then return end
     local cfg = CONFIG.statMod
+    TrackStatInstance(character, STAT_CHARACTER_ATTRIBUTES)
     pcall(function()
         character:SetAttribute("DashRegenTime", cfg.dashRegen)
         character:SetAttribute("Cooldown", cfg.dashRegen)
@@ -416,6 +467,7 @@ local function ApplyStatMod()
     end)
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
+        TrackStatInstance(tool, STAT_TOOL_ATTRIBUTES)
         pcall(function()
             tool:SetAttribute("Firerate", 0)
             tool:SetAttribute("Swingrate", 0)
@@ -429,6 +481,10 @@ local function ApplyStatMod()
             tool:SetAttribute("Lifesteal", cfg.lifesteal)
         end)
     end
+end
+
+local function RestoreStatMod()
+    RestoreTrackedAttributes(statTrackedInstances)
 end
 
 -- =====================
@@ -482,7 +538,9 @@ end
 local abilityState = {
     cd = 0,          -- current cooldown remaining (starts ready)
     active = false,  -- buff currently running
+    fxActive = false,
 }
+local abilityToken = 0
 
 -- Clones the game's DarkShift particle emitters onto a Torso attachment.
 -- pcall'd and existence-checked: if the game doesn't have these instances,
@@ -541,16 +599,35 @@ local function ClearFX(character)
     end)
 end
 
+local function StopAbility(resetCooldown)
+    abilityToken = abilityToken + 1
+    local character = LocalPlayer.Character
+    if character then
+        RestoreTrackedAttributes(abilityTrackedInstances)
+        if abilityState.fxActive then ClearFX(character) end
+    else
+        table.clear(abilityTrackedInstances)
+    end
+    abilityState.active = false
+    abilityState.fxActive = false
+    if resetCooldown then abilityState.cd = 0 end
+end
+
 local function TriggerAbility()
     if not CONFIG.ability.enabled then return end
     if abilityState.cd > 0 or abilityState.active then return end
     local character = LocalPlayer.Character
     if not character then return end
     local cfg = CONFIG.ability
+    TrackAbilityInstance(character)
+    abilityToken = abilityToken + 1
+    local token = abilityToken
     abilityState.active = true
     abilityState.cd = cfg.cooldown
+    local fxSpawned = cfg.fx
+    abilityState.fxActive = fxSpawned
 
-    if cfg.fx then SpawnFX(character) end
+    if fxSpawned then SpawnFX(character) end
 
     pcall(function()
         character:SetAttribute("DashRegenTime", cfg.buffDashRegen)
@@ -559,15 +636,14 @@ local function TriggerAbility()
     end)
 
     task.delay(cfg.buffDuration, function()
+        if token ~= abilityToken then return end
         local char = LocalPlayer.Character
         if char then
-            pcall(function()
-                char:SetAttribute("DashRegenTime", cfg.restDashRegen)
-                char:SetAttribute("MaxDashes", cfg.restMaxDashes)
-            end)
-            if cfg.fx then ClearFX(char) end
+            RestoreTrackedAttributes(abilityTrackedInstances)
+            if fxSpawned then ClearFX(char) end
         end
         abilityState.active = false
+        abilityState.fxActive = false
     end)
 end
 
@@ -599,7 +675,10 @@ local running = true
 local mainTab = myGui:Tab("Main")
 
 local statSection = myGui:Section(mainTab, "Stat Modifier")
-myGui:Checkbox(mainTab, statSection, "Enable", CONFIG.statMod.enabled, function(s) CONFIG.statMod.enabled = s end)
+myGui:Checkbox(mainTab, statSection, "Enable", CONFIG.statMod.enabled, function(s)
+    CONFIG.statMod.enabled = s
+    if not s then pcall(RestoreStatMod) end
+end)
 myGui:Slider(mainTab, statSection, "Utility Boost", CONFIG.statMod.utilityBoost, function(v) CONFIG.statMod.utilityBoost = v end, 1, 700, 1, "")
 myGui:Slider(mainTab, statSection, "Lifesteal", CONFIG.statMod.lifesteal, function(v) CONFIG.statMod.lifesteal = v end, 0, 200, 1, "")
 myGui:Slider(mainTab, statSection, "Aggro Mult", CONFIG.statMod.aggroMultiplier, function(v) CONFIG.statMod.aggroMultiplier = v end, 1, 100, 1, "")
@@ -614,7 +693,10 @@ myGui:Slider(mainTab, hitboxSection, "Mark Size", CONFIG.hitbox.markSize, functi
 
 local abilityTab = myGui:Tab("Ability")
 local abilitySection = myGui:Section(abilityTab, "DarkShift Dash Buff")
-myGui:Checkbox(abilityTab, abilitySection, "Enable", CONFIG.ability.enabled, function(s) CONFIG.ability.enabled = s end)
+myGui:Checkbox(abilityTab, abilitySection, "Enable", CONFIG.ability.enabled, function(s)
+    CONFIG.ability.enabled = s
+    if not s then pcall(StopAbility, true) end
+end)
 myGui:Checkbox(abilityTab, abilitySection, "Particle FX", CONFIG.ability.fx, function(s) CONFIG.ability.fx = s end)
 myGui:Button(abilityTab, abilitySection, "Trigger Now", function() TriggerAbility() end)
 myGui:Slider(abilityTab, abilitySection, "Max Dashes", CONFIG.ability.maxDashes, function(v) CONFIG.ability.maxDashes = v end, 1, 20, 1, "")
@@ -627,6 +709,8 @@ myGui:Button(utilTab, scriptSection, "Restore Hitboxes", function() pcall(Restor
 myGui:Checkbox(utilTab, scriptSection, "Unload", false, function(s)
     if s then
         running = false
+        pcall(StopAbility, true)
+        pcall(RestoreStatMod)
         pcall(RestoreHitbox)
         myGui:Destroy()
     end
