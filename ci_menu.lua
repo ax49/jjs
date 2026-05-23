@@ -31,6 +31,14 @@ local function color3fromHSV(h, s, v)
     return {r * 255, g * 255, b * 255}
 end
 
+local function mixColor(a, b, t)
+    return Color3.new(
+        a.R + (b.R - a.R) * t,
+        a.G + (b.G - a.G) * t,
+        a.B + (b.B - a.B) * t
+    )
+end
+
 local function getMousePos() return Vector2.new(myMouse.X, myMouse.Y) end
 local function lerp(a, b, t) return a + (b - a) * t end
 local function undrawAll(t) for _, d in pairs(t) do d.Visible = false end end
@@ -83,33 +91,39 @@ function UILib.new(name, size, watermarkActivity)
     self._active_colorpicker = nil
     self._clipboard_color = nil
     self._tick = os.clock()
+    self._pulse = 0
     self.identity = name
     self._watermark_activity = watermarkActivity
     self.x = 20
     self.y = 60
     self.w = size and size.x or 300
     self.h = size and size.y or 400
-    self._color_accent = Color3.fromRGB(255, 127, 0)
+    self._color_accent_base = Color3.fromRGB(0, 220, 170)
+    self._color_accent = self._color_accent_base
+    self._color_accent_alt = Color3.fromRGB(120, 185, 255)
     self._color_text = Color3.fromRGB(255, 255, 255)
-    self._color_crust = Color3.fromRGB(0, 0, 0)
-    self._color_border = Color3.fromRGB(25, 25, 25)
-    self._color_surface = Color3.fromRGB(38, 38, 38)
-    self._color_overlay = Color3.fromRGB(76, 76, 76)
-    self._title_h = 25
-    self._tab_h = 20
-    self._padding = 6
+    self._color_muted = Color3.fromRGB(165, 178, 190)
+    self._color_crust = Color3.fromRGB(4, 8, 14)
+    self._color_border = Color3.fromRGB(33, 48, 62)
+    self._color_surface = Color3.fromRGB(12, 18, 27)
+    self._color_surface_2 = Color3.fromRGB(20, 29, 42)
+    self._color_overlay = Color3.fromRGB(47, 66, 84)
+    self._color_hover = Color3.fromRGB(31, 47, 66)
+    self._title_h = 30
+    self._tab_h = 24
+    self._padding = 8
     self._gradient_detail = 80
 
     local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
     local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
     local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_border
     local navbar = Drawing.new('Square') navbar.Filled = true navbar.Color = self._color_border
-    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text
+    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text title.Size = 13
     local watermarkBase = Drawing.new('Square') watermarkBase.Filled = true watermarkBase.Color = self._color_surface
     local watermarkCursor = Drawing.new('Square') watermarkCursor.Filled = true watermarkCursor.Color = self._color_accent
     local watermarkCrust = Drawing.new('Square') watermarkCrust.Filled = false watermarkCrust.Thickness = 1 watermarkCrust.Color = self._color_crust
     local watermarkBorder = Drawing.new('Square') watermarkBorder.Filled = false watermarkBorder.Thickness = 1 watermarkBorder.Color = self._color_border
-    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text
+    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text watermarkText.Size = 12
 
     self._tree = { ['_tabs'] = {}, ['_drawings'] = { crust, border, base, navbar, title, watermarkBase, watermarkCursor, watermarkCrust, watermarkBorder, watermarkText } }
     return self
@@ -149,7 +163,7 @@ function UILib:Tab(name)
     local backdrop = Drawing.new('Square') backdrop.Color = self._color_border backdrop.Filled = true
     local shadow = Drawing.new('Square') shadow.Color = BLACK shadow.Filled = true
     local cursor = Drawing.new('Square') cursor.Color = self._color_accent cursor.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name text.Size = 12
     table.insert(self._tree['_tabs'], { ['name'] = name, ['_sections'] = {}, ['_drawings'] = { backdrop, shadow, cursor, text } })
     if self._active_tab == nil then self._active_tab = name end
     return name
@@ -161,7 +175,7 @@ function UILib:Section(tabName, name)
             local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
             local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
             local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_overlay
-            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text
+            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text title.Size = 12
             table.insert(tab._sections, { ['name'] = name, ['_items'] = {}, ['_drawings'] = { base, crust, border, title } })
             return name
         end
@@ -187,7 +201,7 @@ function UILib:Checkbox(tabName, sectionName, label, defaultValue, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local check = Drawing.new('Square') check.Color = self._color_accent check.Filled = true
     local checkShadow = Drawing.new('Square') checkShadow.Color = BLACK checkShadow.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
     self:_AddToSection(tabName, sectionName, 'checkbox', defaultValue, callback, { outline, check, checkShadow, text })
 end
 
@@ -195,20 +209,23 @@ function UILib:Slider(tabName, sectionName, label, defaultValue, callback, min, 
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Filled = true
     local fill = Drawing.new('Square') fill.Color = self._color_accent fill.Filled = true
     local fillShadow = Drawing.new('Square') fillShadow.Color = BLACK fillShadow.Filled = true
-    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label value.Size = 12
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
     self:_AddToSection(tabName, sectionName, 'slider', defaultValue, callback, { outline, fill, fillShadow, value, text }, { ['min'] = min, ['max'] = max, ['step'] = step, ['appendix'] = appendix })
 end
 
 function UILib:Button(tabName, sectionName, label, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
     self:_AddToSection(tabName, sectionName, 'button', nil, callback, { outline, fill, text }, { ['label'] = label })
 end
 
 function UILib:Step()
     local deltaTime = math.max(os.clock() - self._tick, 0.0035)
+    self._pulse = self._pulse + deltaTime
+    local pulse = (math.sin(self._pulse * 2.4) + 1) / 2
+    self._color_accent = mixColor(self._color_accent_base, self._color_accent_alt, pulse)
     local mousePos = getMousePos()
     for keycode, inputData in pairs(self._inputs) do
         local keycodeId = inputData['id']
@@ -225,7 +242,7 @@ function UILib:Step()
     local m1Held = menuOpen and self._inputs['m1'].held
     local baseOpacity = self._base_opacity
     local childrenVisible = baseOpacity > 0.22
-    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 11), 0, 1)
+    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 15), 0, 1)
     setrobloxinput(not menuOpen)
 
     local watermarkBase = self._tree['_drawings'][6]
@@ -242,10 +259,10 @@ function UILib:Step()
         local watermarkW, watermarkH = self._GetTextBounds(watermarkText)
         local watermarkPosition = Vector2.new(20, 20)
         local watermarkSize = Vector2.new(watermarkW + self._padding * 3, watermarkH + self._padding * 3)
-        watermarkBase.Position = watermarkPosition watermarkBase.Size = watermarkSize watermarkBase.Visible = true watermarkBase.Color = self._color_surface
+        watermarkBase.Position = watermarkPosition watermarkBase.Size = watermarkSize watermarkBase.Visible = true watermarkBase.Color = self._color_surface_2
         watermarkCrust.Position = watermarkPosition watermarkCrust.Size = watermarkSize watermarkCrust.Visible = true watermarkCrust.Color = self._color_crust
         watermarkBorder.Position = watermarkPosition + Vector2.new(1, 1) watermarkBorder.Size = watermarkSize + Vector2.new(-2, -2) watermarkBorder.Visible = true watermarkBorder.Color = self._color_border
-        watermarkCursor.Position = watermarkPosition + Vector2.new(2, 2) watermarkCursor.Size = Vector2.new(watermarkSize.x - 4, 1) watermarkCursor.Visible = true watermarkCursor.Color = self._color_accent
+        watermarkCursor.Position = watermarkPosition + Vector2.new(2, 2) watermarkCursor.Size = Vector2.new(watermarkSize.x - 4, 2) watermarkCursor.Visible = true watermarkCursor.Color = self._color_accent
         watermarkTitle.Position = watermarkPosition + Vector2.new(2 + self._padding, 2 + self._padding) watermarkTitle.Text = watermarkText watermarkTitle.Visible = true watermarkTitle.Color = self._color_text
     else watermarkBase.Visible = false watermarkCrust.Visible = false watermarkBorder.Visible = false watermarkCursor.Visible = false watermarkTitle.Visible = false end
 
@@ -279,8 +296,8 @@ function UILib:Step()
     uiBase.Position = Vector2.new(self.x, self.y) uiBase.Size = Vector2.new(self.w, self.h) uiBase.Transparency = baseOpacity uiBase.Visible = childrenVisible uiBase.Color = self._color_surface
     uiBorder.Position = Vector2.new(self.x + 1, self.y + 1) uiBorder.Size = Vector2.new(self.w - 2, self.h - 2) uiBorder.Transparency = baseOpacity uiBorder.Visible = childrenVisible uiBorder.Color = self._color_border
     uiCrust.Position = Vector2.new(self.x, self.y) uiCrust.Size = Vector2.new(self.w, self.h) uiCrust.Transparency = baseOpacity uiCrust.Visible = childrenVisible uiCrust.Color = self._color_crust
-    uiNavbar.Position = Vector2.new(self.x + 2, self.y + 2) uiNavbar.Size = Vector2.new(self.w - 4, self._title_h - 4) uiNavbar.Transparency = baseOpacity uiNavbar.Visible = childrenVisible uiNavbar.Color = self._color_border
-    local _titleW, titleH = self._GetTextBounds('') uiTitle.Position = Vector2.new(self.x + 7, self.y + self._title_h / 2 - titleH + 2) uiTitle.Transparency = baseOpacity uiTitle.Visible = childrenVisible uiTitle.Color = self._color_text
+    uiNavbar.Position = Vector2.new(self.x + 2, self.y + 2) uiNavbar.Size = Vector2.new(self.w - 4, self._title_h - 4) uiNavbar.Transparency = baseOpacity uiNavbar.Visible = childrenVisible uiNavbar.Color = self._color_surface_2
+    local _titleW, titleH = self._GetTextBounds('') uiTitle.Position = Vector2.new(self.x + 10, self.y + self._title_h / 2 - titleH + 2) uiTitle.Transparency = baseOpacity uiTitle.Visible = childrenVisible uiTitle.Color = self._color_text
     local titleOrigin = Vector2.new(self.x, self.y) local titleSize = Vector2.new(self.w, self._title_h)
     if self._IsMouseWithinBounds(titleOrigin, titleSize) then if clickFrame then self._dragging = true self._drag_offset = mousePos - titleOrigin end end
     if self._dragging then if m1Held then self.x = mousePos.x - self._drag_offset.x self.y = mousePos.y - self._drag_offset.y else self._dragging = false end clickFrame = false end
@@ -291,11 +308,12 @@ function UILib:Step()
         local tabBackdrop = tabDraws[1] local tabShadow = tabDraws[2] local tabCursor = tabDraws[3] local tabText = tabDraws[4]
         local tabW = (self.w - self._padding * 2 - (numTabs - 1) * 2) / numTabs local tabH = self._tab_h
         local tabPosition = Vector2.new(self.x + self._padding + (tabIndex - 1) * (tabW + 2), self.y + self._title_h + self._padding) local tabSize = Vector2.new(tabW, tabH)
-        tabBackdrop.Position = tabPosition tabBackdrop.Size = tabSize tabBackdrop.Transparency = baseOpacity tabBackdrop.Visible = childrenVisible tabBackdrop.Color = self._color_border
-        tabShadow.Position = tabPosition + Vector2.new(0, tabH - 8) tabShadow.Size = Vector2.new(tabW, 8) tabShadow.Transparency = 0.05 * baseOpacity tabShadow.Visible = childrenVisible
-        tabCursor.Position = tabPosition tabCursor.Size = Vector2.new(tabW, 1) tabCursor.Transparency = baseOpacity tabCursor.Visible = tabOpen and childrenVisible tabCursor.Color = self._color_accent
-        tabText.Position = tabPosition + Vector2.new(4, tabH / 2 - ESP_FONTSIZE / 2) tabText.Transparency = baseOpacity tabText.Visible = childrenVisible tabText.Color = self._color_text
-        if clickFrame and self._IsMouseWithinBounds(tabPosition, tabSize) then self._active_tab = tabName end
+        local tabHover = self._IsMouseWithinBounds(tabPosition, tabSize)
+        tabBackdrop.Position = tabPosition tabBackdrop.Size = tabSize tabBackdrop.Transparency = baseOpacity tabBackdrop.Visible = childrenVisible tabBackdrop.Color = tabOpen and self._color_surface_2 or (tabHover and self._color_hover or self._color_border)
+        tabShadow.Position = tabPosition + Vector2.new(0, tabH - 7) tabShadow.Size = Vector2.new(tabW, 7) tabShadow.Transparency = 0.08 * baseOpacity tabShadow.Visible = childrenVisible
+        tabCursor.Position = tabPosition + Vector2.new(0, tabH - 2) tabCursor.Size = Vector2.new(tabW, 2) tabCursor.Transparency = baseOpacity tabCursor.Visible = tabOpen and childrenVisible tabCursor.Color = self._color_accent
+        tabText.Position = tabPosition + Vector2.new(6, tabH / 2 - ESP_FONTSIZE / 2) tabText.Transparency = baseOpacity tabText.Visible = childrenVisible tabText.Color = tabOpen and self._color_text or self._color_muted
+        if clickFrame and tabHover then self._active_tab = tabName end
         local totalSectionH_0 = self._padding local totalSectionH_1 = self._padding
         for sectionIndex, section in ipairs(tab['_sections']) do
             local sectionDraws = section['_drawings'] local sectionItems = section['_items']
@@ -308,41 +326,44 @@ function UILib:Step()
                     local itemPosition = sectionPos + Vector2.new(10, sectionY)
                     if itemType == 'checkbox' then
                         local checkboxOutline = itemDraws[1] local checkboxCheck = itemDraws[2] local checkboxShadow = itemDraws[3] local checkboxLabel = itemDraws[4]
-                        local boxSize = Vector2.new(14, 14)
-                        checkboxOutline.Position = itemPosition checkboxOutline.Size = boxSize checkboxOutline.Transparency = baseOpacity checkboxOutline.Visible = childrenVisible
-                        checkboxCheck.Position = itemPosition + Vector2.new(1, 1) checkboxCheck.Size = boxSize - Vector2.new(2, 2) checkboxCheck.Transparency = baseOpacity checkboxCheck.Visible = itemValue == true and childrenVisible checkboxCheck.Color = self._color_accent
-                        checkboxShadow.Position = itemPosition + Vector2.new(1, boxSize.y - 2) checkboxShadow.Size = Vector2.new(boxSize.x - 2, 1) checkboxShadow.Transparency = 0.3 * baseOpacity checkboxShadow.Visible = itemValue == true and childrenVisible checkboxShadow.Color = self._color_border
-                        checkboxLabel.Position = itemPosition + Vector2.new(boxSize.x + 8, 0) checkboxLabel.Transparency = baseOpacity checkboxLabel.Visible = childrenVisible checkboxLabel.Color = self._color_text
-                        if self._IsMouseWithinBounds(itemPosition, boxSize) then checkboxOutline.Color = self._color_accent if clickFrame then sectionItem['value'] = not sectionItem['value'] if itemCallback then itemCallback(sectionItem['value']) end end else checkboxOutline.Color = self._color_crust end
-                        sectionY = sectionY + boxSize.y + 8
+                        local boxSize = Vector2.new(28, 14)
+                        local toggleHover = self._IsMouseWithinBounds(itemPosition, Vector2.new(sectionW - 20, boxSize.y))
+                        checkboxOutline.Position = itemPosition checkboxOutline.Size = boxSize checkboxOutline.Transparency = baseOpacity checkboxOutline.Visible = childrenVisible checkboxOutline.Color = itemValue and self._color_accent or (toggleHover and self._color_overlay or self._color_border)
+                        checkboxCheck.Position = itemPosition + Vector2.new(itemValue and 15 or 2, 2) checkboxCheck.Size = Vector2.new(11, 10) checkboxCheck.Transparency = baseOpacity checkboxCheck.Visible = childrenVisible checkboxCheck.Color = itemValue and self._color_accent or self._color_muted
+                        checkboxShadow.Position = itemPosition + Vector2.new(2, boxSize.y - 2) checkboxShadow.Size = Vector2.new(boxSize.x - 4, 1) checkboxShadow.Transparency = 0.18 * baseOpacity checkboxShadow.Visible = childrenVisible checkboxShadow.Color = BLACK
+                        checkboxLabel.Position = itemPosition + Vector2.new(boxSize.x + 9, 0) checkboxLabel.Transparency = baseOpacity checkboxLabel.Visible = childrenVisible checkboxLabel.Color = toggleHover and self._color_text or self._color_muted
+                        if toggleHover then if clickFrame then sectionItem['value'] = not sectionItem['value'] if itemCallback then itemCallback(sectionItem['value']) end end end
+                        sectionY = sectionY + boxSize.y + 10
                     elseif itemType == 'slider' then
                         local sliderOutline = itemDraws[1] local sliderFill = itemDraws[2] local sliderFillShadow = itemDraws[3] local sliderValue = itemDraws[4] local sliderLabel = itemDraws[5]
                         local min = sectionItem['min'] local max = sectionItem['max'] local step = sectionItem['step'] local appendix = sectionItem['appendix']
-                        local sliderW = sectionW - self._padding * 3 local sliderH = 20 local sliderBoxSize = Vector2.new(sliderW, sliderH)
+                        local sliderW = sectionW - self._padding * 3 local sliderH = 18 local sliderBoxSize = Vector2.new(sliderW, sliderH)
                         local _labelW, labelH = self._GetTextBounds('')
-                        sliderLabel.Position = itemPosition sliderLabel.Transparency = baseOpacity sliderLabel.Visible = childrenVisible sliderLabel.Color = self._color_text
-                        sliderOutline.Position = itemPosition + Vector2.new(0, labelH + 10) sliderOutline.Size = sliderBoxSize sliderOutline.Transparency = baseOpacity sliderOutline.Visible = childrenVisible sliderOutline.Color = self._color_crust
+                        local sliderHover = self._IsMouseWithinBounds(itemPosition + Vector2.new(0, labelH + 10), sliderBoxSize)
+                        sliderLabel.Position = itemPosition sliderLabel.Transparency = baseOpacity sliderLabel.Visible = childrenVisible sliderLabel.Color = sliderHover and self._color_text or self._color_muted
+                        sliderOutline.Position = itemPosition + Vector2.new(0, labelH + 16) sliderOutline.Size = Vector2.new(sliderW, 6) sliderOutline.Transparency = baseOpacity sliderOutline.Visible = childrenVisible sliderOutline.Color = self._color_border
                         local fillVisible = itemValue ~= min and childrenVisible
                         local fillPercent = (itemValue - (sectionItem.min or 0)) / ((sectionItem.max or 1) - (sectionItem.min or 0)) fillPercent = clamp(fillPercent, 0, 1)
-                        sliderFill.Position = itemPosition + Vector2.new(1, labelH + 11) sliderFill.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), sliderH - 2) sliderFill.Transparency = baseOpacity sliderFill.Visible = fillVisible sliderFill.Color = self._color_accent
-                        sliderFillShadow.Position = itemPosition + Vector2.new(1, labelH + sliderH + 7) sliderFillShadow.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), 2) sliderFillShadow.Transparency = 0.15 * baseOpacity sliderFillShadow.Visible = fillVisible
+                        sliderFill.Position = itemPosition + Vector2.new(1, labelH + 17) sliderFill.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), 4) sliderFill.Transparency = baseOpacity sliderFill.Visible = fillVisible sliderFill.Color = self._color_accent
+                        sliderFillShadow.Position = itemPosition + Vector2.new(math.max(sliderW * fillPercent - 3, 1), labelH + 13) sliderFillShadow.Size = Vector2.new(4, 12) sliderFillShadow.Transparency = baseOpacity sliderFillShadow.Visible = childrenVisible sliderFillShadow.Color = self._color_text
                         local displayedValue = tostring(itemValue) .. (appendix or '') local sliderValueW, sliderValueH = self._GetTextBounds(displayedValue)
-                        sliderValue.Position = itemPosition + Vector2.new(sliderW - sliderValueW - 6, sliderValueH / 2 + sliderH - 2) sliderValue.Text = displayedValue sliderValue.Transparency = baseOpacity sliderValue.Visible = childrenVisible
-                        if self._IsMouseWithinBounds(itemPosition + Vector2.new(0, labelH + 10), sliderBoxSize) then sliderValue.Color = self._color_accent if m1Held then local mouseX = mousePos.x - itemPosition.x local percent = clamp(mouseX / sliderW, 0, 1) local newValue = min + (max - min) * percent newValue = math.floor((newValue / step) + 0.5) * step newValue = math.max(min, math.min(max, newValue)) if newValue ~= sectionItem['value'] then sectionItem['value'] = newValue if itemCallback then itemCallback(newValue) end end end else sliderValue.Color = self._color_text end
+                        sliderValue.Position = itemPosition + Vector2.new(sliderW - sliderValueW - 2, 0) sliderValue.Text = displayedValue sliderValue.Transparency = baseOpacity sliderValue.Visible = childrenVisible
+                        if sliderHover then sliderValue.Color = self._color_accent if m1Held then local mouseX = mousePos.x - itemPosition.x local percent = clamp(mouseX / sliderW, 0, 1) local newValue = min + (max - min) * percent newValue = math.floor((newValue / step) + 0.5) * step newValue = math.max(min, math.min(max, newValue)) if newValue ~= sectionItem['value'] then sectionItem['value'] = newValue if itemCallback then itemCallback(newValue) end end end else sliderValue.Color = self._color_text end
                         sectionY = sectionY + sliderH + 18 + labelH
                     elseif itemType == 'button' then
                         local buttonOutline = itemDraws[1] local buttonFill = itemDraws[2] local buttonLabel = itemDraws[3]
-                        local buttonText = sectionItem['label'] local buttonTextW, buttonTextH = self._GetTextBounds(buttonText) local buttonBoxSize = Vector2.new(buttonTextW + self._padding * 2, 20)
-                        buttonLabel.Position = itemPosition + Vector2.new(self._padding, 4) buttonLabel.Transparency = baseOpacity buttonLabel.Visible = childrenVisible buttonLabel.Color = self._color_text
+                        local buttonText = sectionItem['label'] local buttonTextW, buttonTextH = self._GetTextBounds(buttonText) local buttonBoxSize = Vector2.new(sectionW - 20, 22)
+                        local buttonHover = self._IsMouseWithinBounds(itemPosition, buttonBoxSize)
+                        buttonLabel.Position = itemPosition + Vector2.new(buttonBoxSize.x / 2 - buttonTextW / 2, 5) buttonLabel.Transparency = baseOpacity buttonLabel.Visible = childrenVisible buttonLabel.Color = buttonHover and self._color_text or self._color_muted
                         buttonOutline.Position = itemPosition buttonOutline.Size = buttonBoxSize buttonOutline.Transparency = baseOpacity buttonOutline.Visible = childrenVisible
-                        buttonFill.Position = itemPosition + Vector2.new(2, 2) buttonFill.Size = buttonBoxSize - Vector2.new(4, 4) buttonFill.Transparency = baseOpacity buttonFill.Visible = childrenVisible buttonFill.Color = self._color_crust
-                        if self._IsMouseWithinBounds(itemPosition, buttonBoxSize) then if clickFrame and itemCallback then itemCallback(sectionItem['value']) end buttonOutline.Color = self._color_accent else buttonOutline.Color = self._color_crust end
+                        buttonFill.Position = itemPosition + Vector2.new(2, 2) buttonFill.Size = buttonBoxSize - Vector2.new(4, 4) buttonFill.Transparency = baseOpacity buttonFill.Visible = childrenVisible buttonFill.Color = buttonHover and self._color_hover or self._color_surface_2
+                        if buttonHover then if clickFrame and itemCallback then itemCallback(sectionItem['value']) end buttonOutline.Color = self._color_accent else buttonOutline.Color = self._color_border end
                         sectionY = sectionY + 22 + buttonTextH
                     end
                 end
                 local sectionCrust = sectionDraws[2] local sectionBorder = sectionDraws[3] local sectionTitle = sectionDraws[4]
-                sectionCrust.Position = sectionPos sectionCrust.Size = Vector2.new(sectionW, sectionY) sectionCrust.Transparency = baseOpacity sectionCrust.Visible = childrenVisible sectionCrust.Color = self._color_crust
-                sectionBorder.Position = sectionPos + Vector2.new(1, 1) sectionBorder.Size = Vector2.new(sectionW - 2, sectionY - 2) sectionBorder.Transparency = baseOpacity sectionBorder.Visible = childrenVisible sectionBorder.Color = self._color_overlay
+                sectionCrust.Position = sectionPos sectionCrust.Size = Vector2.new(sectionW, sectionY) sectionCrust.Transparency = baseOpacity sectionCrust.Visible = childrenVisible sectionCrust.Color = self._color_surface_2
+                sectionBorder.Position = sectionPos + Vector2.new(1, 1) sectionBorder.Size = Vector2.new(sectionW - 2, sectionY - 2) sectionBorder.Transparency = baseOpacity sectionBorder.Visible = childrenVisible sectionBorder.Color = self._color_border
                 local _sectionTitleW, sectionTitleH = self._GetTextBounds('') sectionTitle.Position = sectionPos + Vector2.new(10, - sectionTitleH / 2) sectionTitle.Transparency = baseOpacity sectionTitle.Visible = childrenVisible sectionTitle.Color = self._color_text
                 sectionDraws[1].Visible = false
                 sectionY = sectionY + self._padding
@@ -406,6 +427,7 @@ local abilityTrackedInstances = setmetatable({}, {__mode = "k"})
 local STAT_CHARACTER_ATTRIBUTES = {"DashRegenTime", "Cooldown", "UtilityBoost", "AggroMultiplier"}
 local STAT_TOOL_ATTRIBUTES = {"Firerate", "Swingrate", "LungeRate", "OffhandSwingRate", "Windup", "ChargeRate", "ChargeTime", "Cooldown", "Spread", "Lifesteal"}
 local ABILITY_ATTRIBUTES = {"DashRegenTime", "MaxDashes", "Dashes"}
+local abilityState
 
 local function RememberAttributes(instance, names)
     if not instance then return end
@@ -451,6 +473,28 @@ local function RestoreTrackedAttributes(tracked)
     table.clear(tracked)
 end
 
+local function ForceDashNormal()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local dashRegen = CONFIG.ability.restDashRegen or 15/10
+    local maxDashes = CONFIG.ability.restMaxDashes or 3
+    pcall(function()
+        character:SetAttribute("DashRegenTime", dashRegen)
+        character:SetAttribute("Cooldown", dashRegen)
+        character:SetAttribute("MaxDashes", maxDashes)
+        local dashes = character:GetAttribute("Dashes")
+        if type(dashes) ~= "number" or dashes > maxDashes then
+            character:SetAttribute("Dashes", maxDashes)
+        end
+    end)
+end
+
+local function ForceDashNormalIfNoBoosts()
+    if not CONFIG.statMod.enabled and (not abilityState or not abilityState.active) then
+        ForceDashNormal()
+    end
+end
+
 -- =====================
 -- STAT MODIFIER (your own character + held tool only)
 -- =====================
@@ -485,6 +529,7 @@ end
 
 local function RestoreStatMod()
     RestoreTrackedAttributes(statTrackedInstances)
+    ForceDashNormalIfNoBoosts()
 end
 
 -- =====================
@@ -535,7 +580,7 @@ end
 -- =====================
 -- ABILITY: DarkShift dash buff (self-buff + optional cosmetic FX toggle)
 -- =====================
-local abilityState = {
+abilityState = {
     cd = 0,          -- current cooldown remaining (starts ready)
     active = false,  -- buff currently running
     fxActive = false,
@@ -611,6 +656,7 @@ local function StopAbility(resetCooldown)
     abilityState.active = false
     abilityState.fxActive = false
     if resetCooldown then abilityState.cd = 0 end
+    ForceDashNormalIfNoBoosts()
 end
 
 local function TriggerAbility()
@@ -644,6 +690,7 @@ local function TriggerAbility()
         end
         abilityState.active = false
         abilityState.fxActive = false
+        ForceDashNormalIfNoBoosts()
     end)
 end
 
@@ -669,7 +716,7 @@ end
 -- =====================
 -- UI SETUP
 -- =====================
-local myGui = UILib.new("CI", Vector2.new(320, 420), {GetStatus})
+local myGui = UILib.new("CI // Matcha", Vector2.new(360, 460), {GetStatus})
 local running = true
 
 local mainTab = myGui:Tab("Main")
@@ -705,6 +752,7 @@ myGui:Slider(abilityTab, abilitySection, "Cooldown", CONFIG.ability.cooldown, fu
 
 local utilTab = myGui:Tab("Utility")
 local scriptSection = myGui:Section(utilTab, "Script")
+myGui:Button(utilTab, scriptSection, "Normalize Dash", function() pcall(ForceDashNormal) end)
 myGui:Button(utilTab, scriptSection, "Restore Hitboxes", function() pcall(RestoreHitbox) end)
 myGui:Checkbox(utilTab, scriptSection, "Unload", false, function(s)
     if s then
