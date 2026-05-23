@@ -218,6 +218,8 @@ function UILib:Step()
             self._inputs[keycode]['held'] = true
         else self._inputs[keycode]['held'] = false end
     end
+    -- F1 toggles the menu open/closed (edge-triggered so one tap = one toggle)
+    if self._inputs['f1'].click then self._open = not self._open end
     local menuOpen = self._open
     local clickFrame = menuOpen and self._inputs['m1'].click
     local m1Held = menuOpen and self._inputs['m1'].held
@@ -377,6 +379,16 @@ local CONFIG = {
         size = 40,
         markSize = 80,
     },
+    ability = {
+        enabled = false,
+        fx = false, -- cosmetic particle FX (only works if game has the DarkShift emitters)
+        maxDashes = 6,
+        buffDuration = 16,
+        cooldown = 40,
+        buffDashRegen = 25/10, -- 2.5 (decimal-safe division)
+        restDashRegen = 15/10, -- 1.5
+        restMaxDashes = 3,
+    },
 }
 
 local TARGET_NAMES = {"Head", "Main", "Storage", "KillBot", "Cannon", "killbot", "cannon"}
@@ -465,12 +477,116 @@ local function RestoreHitbox()
 end
 
 -- =====================
+-- ABILITY: DarkShift dash buff (self-buff + optional cosmetic FX toggle)
+-- =====================
+local abilityState = {
+    cd = 0,          -- current cooldown remaining (starts ready)
+    active = false,  -- buff currently running
+}
+
+-- Clones the game's DarkShift particle emitters onto a Torso attachment.
+-- pcall'd and existence-checked: if the game doesn't have these instances,
+-- it silently does nothing rather than erroring.
+local function SpawnFX(character)
+    pcall(function()
+        local torso = character:FindFirstChild("Torso")
+        if not torso then return end
+        local emitterFolder = torso:FindFirstChild("emitters")
+        if not emitterFolder then
+            emitterFolder = Instance.new("Folder")
+            emitterFolder.Name = "emitters"
+            emitterFolder.Parent = torso
+        end
+        local rep = game:GetService("ReplicatedStorage")
+        local fx = rep:FindFirstChild("FX")
+        local effects = fx and fx:FindFirstChild("Effects")
+        local emittersNode = effects and effects:FindFirstChild("Emitters")
+        local darkShift = emittersNode and emittersNode:FindFirstChild("DarkShift")
+        if not darkShift then return end -- game layout differs; skip quietly
+
+        local attachment = Instance.new("Attachment")
+        attachment.Name = "FXAttachment"
+        attachment.Parent = emitterFolder
+
+        local baseColor = torso.Color
+        local darkerColor = Color3.new(baseColor.R * 0.5, baseColor.G * 0.5, baseColor.B * 0.5)
+
+        for _, v in ipairs(darkShift:GetChildren()) do
+            local clone = v:Clone()
+            clone.Parent = attachment
+            if clone:IsA("ParticleEmitter") then
+                clone.Enabled = true
+                clone.LockedToPart = true
+                if clone.Name == "Shockwave" then
+                    clone.Rate = 5
+                    clone.Color = ColorSequence.new({
+                        ColorSequenceKeypoint.new(0, baseColor),
+                        ColorSequenceKeypoint.new(1, darkerColor),
+                    })
+                end
+            end
+        end
+    end)
+end
+
+local function ClearFX(character)
+    pcall(function()
+        local torso = character:FindFirstChild("Torso")
+        local emitterFolder = torso and torso:FindFirstChild("emitters")
+        if emitterFolder then
+            for _, v in ipairs(emitterFolder:GetChildren()) do
+                v:Destroy()
+            end
+        end
+    end)
+end
+
+local function TriggerAbility()
+    if not CONFIG.ability.enabled then return end
+    if abilityState.cd > 0 or abilityState.active then return end
+    local character = LocalPlayer.Character
+    if not character then return end
+    local cfg = CONFIG.ability
+    abilityState.active = true
+    abilityState.cd = cfg.cooldown
+
+    if cfg.fx then SpawnFX(character) end
+
+    pcall(function()
+        character:SetAttribute("DashRegenTime", cfg.buffDashRegen)
+        character:SetAttribute("MaxDashes", cfg.maxDashes)
+        character:SetAttribute("Dashes", cfg.maxDashes)
+    end)
+
+    task.delay(cfg.buffDuration, function()
+        local char = LocalPlayer.Character
+        if char then
+            pcall(function()
+                char:SetAttribute("DashRegenTime", cfg.restDashRegen)
+                char:SetAttribute("MaxDashes", cfg.restMaxDashes)
+            end)
+            if cfg.fx then ClearFX(char) end
+        end
+        abilityState.active = false
+    end)
+end
+
+-- =====================
 -- WATERMARK STATUS
 -- =====================
 local function GetStatus()
     local parts = {}
     table.insert(parts, CONFIG.statMod.enabled and "Stats: ON" or "Stats: OFF")
     table.insert(parts, CONFIG.hitbox.enabled and "Hitbox: ON" or "Hitbox: OFF")
+    if CONFIG.ability.enabled then
+        if abilityState.active then
+            table.insert(parts, "Ability: ACTIVE")
+        elseif abilityState.cd > 0 then
+            table.insert(parts, "Ability: " .. tostring(abilityState.cd) .. "s")
+        else
+            table.insert(parts, "Ability: READY")
+        end
+    end
     return table.concat(parts, " | ")
 end
 
@@ -495,6 +611,15 @@ myGui:Checkbox(mainTab, hitboxSection, "Enable", CONFIG.hitbox.enabled, function
 end)
 myGui:Slider(mainTab, hitboxSection, "Size", CONFIG.hitbox.size, function(v) CONFIG.hitbox.size = v end, 5, 100, 1, " studs")
 myGui:Slider(mainTab, hitboxSection, "Mark Size", CONFIG.hitbox.markSize, function(v) CONFIG.hitbox.markSize = v end, 5, 150, 1, " studs")
+
+local abilityTab = myGui:Tab("Ability")
+local abilitySection = myGui:Section(abilityTab, "DarkShift Dash Buff")
+myGui:Checkbox(abilityTab, abilitySection, "Enable", CONFIG.ability.enabled, function(s) CONFIG.ability.enabled = s end)
+myGui:Checkbox(abilityTab, abilitySection, "Particle FX", CONFIG.ability.fx, function(s) CONFIG.ability.fx = s end)
+myGui:Button(abilityTab, abilitySection, "Trigger Now", function() TriggerAbility() end)
+myGui:Slider(abilityTab, abilitySection, "Max Dashes", CONFIG.ability.maxDashes, function(v) CONFIG.ability.maxDashes = v end, 1, 20, 1, "")
+myGui:Slider(abilityTab, abilitySection, "Duration", CONFIG.ability.buffDuration, function(v) CONFIG.ability.buffDuration = v end, 1, 60, 1, "s")
+myGui:Slider(abilityTab, abilitySection, "Cooldown", CONFIG.ability.cooldown, function(v) CONFIG.ability.cooldown = v end, 0, 120, 1, "s")
 
 local utilTab = myGui:Tab("Utility")
 local scriptSection = myGui:Section(utilTab, "Script")
@@ -521,5 +646,28 @@ spawn(function() while running do myGui:Step() task.wait() end end)
 spawn(function() while running do if CONFIG.statMod.enabled then pcall(ApplyStatMod) end task.wait(0.1) end end)
 -- Hitbox re-apply: throttled to 0.1s (new enemies spawn over time)
 spawn(function() while running do if CONFIG.hitbox.enabled then pcall(ApplyHitbox) end task.wait(0.1) end end)
+-- Ability Y-key trigger: edge-detect Y (VK 0x59) so one tap = one fire
+spawn(function()
+    local wasDown = false
+    while running do
+        if CONFIG.ability.enabled and isrbxactive() then
+            local down = iskeypressed(0x59) -- Y
+            if down and not wasDown then TriggerAbility() end
+            wasDown = down
+        else
+            wasDown = false
+        end
+        task.wait()
+    end
+end)
+-- Ability cooldown countdown: tick down 1 per second while enabled
+spawn(function()
+    while running do
+        if CONFIG.ability.enabled and abilityState.cd > 0 then
+            abilityState.cd = abilityState.cd - 1
+        end
+        task.wait(1)
+    end
+end)
 
 while running do task.wait(0.1) end
