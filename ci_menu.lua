@@ -1,6 +1,6 @@
 -- Combat Initiation - Matcha Menu
--- PvE wave-survival helper. Stat modifier + hitbox expander.
--- UI by nulare
+-- PvE wave-survival helper. Full combat suite.
+-- UI by nulare | Features extended
 
 local UILib = {}
 UILib.__index = UILib
@@ -246,7 +246,6 @@ function UILib:Step()
             self._inputs[keycode]['held'] = true
         else self._inputs[keycode]['held'] = false end
     end
-    -- F1 toggles the menu open/closed (edge-triggered so one tap = one toggle)
     if self._inputs['f1'].click then self._open = not self._open end
     local menuOpen = self._open
     local clickFrame = menuOpen and self._inputs['m1'].click
@@ -416,9 +415,9 @@ function UILib:Destroy()
     self._tree = nil setrobloxinput(true)
 end
 
--- =====================
--- CONFIG
--- =====================
+-- ===================================================================
+--                         CONFIG
+-- ===================================================================
 local CONFIG = {
     statMod = {
         enabled = false,
@@ -429,17 +428,91 @@ local CONFIG = {
         size = 40,
         markSize = 80,
     },
+    damage = {
+        esp = false,
+        heavyForce = false,
+    },
+    parry = {
+        auto = false,
+        range = 25,
+        cooldown = 0.4,
+        disableFlash = false,
+        forceReflector = false,
+    },
+    health = {
+        autoHeal = false,
+        threshold = 30,
+        esp = false,
+    },
+    stamina = {
+        infinite = false,
+    },
 }
 
 local TARGET_NAMES = {"Head", "Main", "Storage", "KillBot", "Cannon", "killbot", "cannon"}
 
--- =====================
--- INTERNAL STATE
--- =====================
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Workspace = game:GetService("Workspace")
-local originalSizes = {}
+-- ===================================================================
+--                     SERVICES & REFERENCES
+-- ===================================================================
+local Players        = game:GetService("Players")
+local LocalPlayer    = Players.LocalPlayer
+local Workspace      = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService     = game:GetService("RunService")
+local Lighting       = game:GetService("Lighting")
+local Camera         = Workspace.CurrentCamera
+
+-- ===================================================================
+--                  INSTANCE FINDER UTILITY
+-- ===================================================================
+local function FindInstance(name, className, parent)
+    parent = parent or ReplicatedStorage
+    local result = nil
+    pcall(function()
+        for _, v in ipairs(parent:GetDescendants()) do
+            if v.Name == name and (not className or v:IsA(className)) then
+                result = v
+                return
+            end
+        end
+    end)
+    if not result then
+        pcall(function()
+            for _, v in ipairs(Workspace:GetDescendants()) do
+                if v.Name == name and (not className or v:IsA(className)) then
+                    result = v
+                    return
+                end
+            end
+        end)
+    end
+    return result
+end
+
+-- ===================================================================
+--               CACHED REMOTES & MODULES (loaded once)
+-- ===================================================================
+local Remotes = {}
+pcall(function()
+    Remotes.RefillStamina   = FindInstance("RefillStamina",   "RemoteEvent")
+    Remotes.Parry           = FindInstance("Parry",           "RemoteEvent")
+    Remotes.PlayerDamage    = FindInstance("PlayerDamage",    "RemoteEvent")
+    Remotes.DamageIndicator = FindInstance("DamageIndicator", "RemoteEvent")
+    Remotes.AllyDamage      = FindInstance("AllyDamage",      "RemoteEvent")
+end)
+
+local Modules = {}
+pcall(function()
+    local healMod = FindInstance("heal", "ModuleScript")
+    if healMod then pcall(function() Modules.Heal = require(healMod) end) end
+    local getDmg = FindInstance("GetDamage", "ModuleScript")
+    if getDmg then pcall(function() Modules.GetDamage = require(getDmg) end) end
+end)
+
+-- ===================================================================
+--                ORIGINAL-STATE TRACKING (existing)
+-- ===================================================================
+local originalSizes      = {}
 local originalAttributes = setmetatable({}, {__mode = "k"})
 local statTrackedInstances = setmetatable({}, {__mode = "k"})
 local STAT_TOOL_ATTRIBUTES = {"Lifesteal"}
@@ -447,14 +520,9 @@ local STAT_TOOL_ATTRIBUTES = {"Lifesteal"}
 local function RememberAttributes(instance, names)
     if not instance then return end
     local snapshot = originalAttributes[instance]
-    if not snapshot then
-        snapshot = {}
-        originalAttributes[instance] = snapshot
-    end
+    if not snapshot then snapshot = {} originalAttributes[instance] = snapshot end
     for _, name in ipairs(names) do
-        if snapshot[name] == nil then
-            snapshot[name] = { value = instance:GetAttribute(name) }
-        end
+        if snapshot[name] == nil then snapshot[name] = { value = instance:GetAttribute(name) } end
     end
 end
 
@@ -464,9 +532,7 @@ local function RestoreAttributes(instance, names)
     pcall(function()
         for _, name in ipairs(names) do
             local saved = snapshot[name]
-            if saved ~= nil then
-                instance:SetAttribute(name, saved.value)
-            end
+            if saved ~= nil then instance:SetAttribute(name, saved.value) end
         end
     end)
 end
@@ -477,35 +543,27 @@ local function TrackStatInstance(instance, names)
 end
 
 local function RestoreTrackedAttributes(tracked)
-    for instance, names in pairs(tracked) do
-        RestoreAttributes(instance, names)
-    end
+    for instance, names in pairs(tracked) do RestoreAttributes(instance, names) end
     table.clear(tracked)
 end
 
--- =====================
--- STAT MODIFIER (your own character + held tool only)
--- =====================
+-- ===================================================================
+--               STAT MODIFIER  (existing feature)
+-- ===================================================================
 local function ApplyStatMod()
     local character = LocalPlayer.Character
     if not character then return end
-    local cfg = CONFIG.statMod
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
         TrackStatInstance(tool, STAT_TOOL_ATTRIBUTES)
-        pcall(function()
-            tool:SetAttribute("Lifesteal", cfg.lifesteal)
-        end)
+        pcall(function() tool:SetAttribute("Lifesteal", CONFIG.statMod.lifesteal) end)
     end
 end
+local function RestoreStatMod() RestoreTrackedAttributes(statTrackedInstances) end
 
-local function RestoreStatMod()
-    RestoreTrackedAttributes(statTrackedInstances)
-end
-
--- =====================
--- HITBOX EXPANDER (enemy parts in Enemies folder)
--- =====================
+-- ===================================================================
+--              HITBOX EXPANDER  (existing feature)
+-- ===================================================================
 local function ApplyHitbox()
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return end
@@ -548,22 +606,401 @@ local function RestoreHitbox()
     table.clear(originalSizes)
 end
 
--- =====================
--- WATERMARK STATUS
--- =====================
-local function GetStatus()
-    local parts = {}
-    table.insert(parts, CONFIG.statMod.enabled and "Stats: ON" or "Stats: OFF")
-    table.insert(parts, CONFIG.hitbox.enabled and "Hitbox: ON" or "Hitbox: OFF")
-    return table.concat(parts, " | ")
+-- ===================================================================
+--                HEAVY DAMAGE FORCE  (new)
+-- Force the held tool to flag attacks as heavy/critical.
+-- Works if the game reads DamageType / HeavyDamage attributes
+-- from the tool (common in attribute-driven combat systems).
+-- ===================================================================
+local HEAVY_ATTRS = {"DamageType", "HeavyDamage", "CriticalHit", "AttackType"}
+local heavyTracked = setmetatable({}, {__mode = "k"})
+
+local function ApplyHeavyDamage()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local tool = character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    RememberAttributes(tool, HEAVY_ATTRS)
+    heavyTracked[tool] = HEAVY_ATTRS
+    pcall(function()
+        tool:SetAttribute("DamageType",  "Heavy")
+        tool:SetAttribute("HeavyDamage", true)
+        tool:SetAttribute("CriticalHit", true)
+        tool:SetAttribute("AttackType",  "Heavy")
+    end)
 end
 
--- =====================
--- UI SETUP
--- =====================
-local myGui = UILib.new("CI // Matcha", Vector2.new(360, 460), {GetStatus})
+local function RestoreHeavyDamage()
+    for inst, names in pairs(heavyTracked) do RestoreAttributes(inst, names) end
+    table.clear(heavyTracked)
+end
+
+-- ===================================================================
+--              INFINITE STAMINA  (new)
+-- Fires the RefillStamina RemoteEvent every cycle.
+-- ===================================================================
+local function ApplyInfiniteStamina()
+    if Remotes.RefillStamina then
+        pcall(function() Remotes.RefillStamina:FireServer() end)
+    end
+end
+
+-- ===================================================================
+--                  AUTO HEAL  (new)
+-- Fires the heal module or searches for a heal mechanism
+-- when the player's health drops below threshold.
+-- ===================================================================
+local function GetPlayerHealth()
+    local character = LocalPlayer.Character
+    if not character then return 100, 100 end
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if not hum then return 100, 100 end
+    return hum.Health, hum.MaxHealth
+end
+
+local function ApplyAutoHeal()
+    local hp, maxHp = GetPlayerHealth()
+    local threshold = (CONFIG.health.threshold / 100) * maxHp
+    if hp >= threshold then return end
+
+    -- Strategy 1: call the required heal module
+    if Modules.Heal then
+        pcall(function()
+            if type(Modules.Heal) == "function" then
+                Modules.Heal(LocalPlayer)
+            elseif type(Modules.Heal) == "table" then
+                local fn = Modules.Heal.heal or Modules.Heal.Heal
+                    or Modules.Heal.activate or Modules.Heal.Use
+                if fn then fn(LocalPlayer) end
+            end
+        end)
+    end
+
+    -- Strategy 2: look for a heal remote (name variations)
+    local healNames = {"Heal", "heal", "UseHeal", "HealPlayer", "RequestHeal"}
+    for _, n in ipairs(healNames) do
+        local remote = FindInstance(n, "RemoteEvent")
+        if remote then
+            pcall(function() remote:FireServer() end)
+            break
+        end
+    end
+end
+
+-- ===================================================================
+--                    AUTO PARRY  (new)
+-- Detects nearby enemy attack animations and fires the Parry
+-- remote with a configurable cooldown.
+-- ===================================================================
+local ATTACK_KEYWORDS = {
+    "attack", "swing", "slash", "hit", "punch", "kick",
+    "smash", "strike", "combo", "heavy", "lunge", "thrust",
+    "chop", "cleave", "slam", "stab",
+}
+
+local function IsEnemyAttacking(enemy)
+    local ok, result = pcall(function()
+        local hum = enemy:FindFirstChildOfClass("Humanoid")
+        if not hum then return false end
+        local animator = hum:FindFirstChildOfClass("Animator")
+        if not animator then return false end
+        local tracks = animator:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            local lname = string.lower(track.Name or "")
+            for _, kw in ipairs(ATTACK_KEYWORDS) do
+                if string.find(lname, kw) then return true end
+            end
+            -- Also trigger on Action-priority animations (likely attacks)
+            if track.Priority == Enum.AnimationPriority.Action
+            or track.Priority == Enum.AnimationPriority.Action2
+            or track.Priority == Enum.AnimationPriority.Action3
+            or track.Priority == Enum.AnimationPriority.Action4 then
+                -- But skip idle/walk/run animations
+                if not string.find(lname, "idle")
+                and not string.find(lname, "walk")
+                and not string.find(lname, "run")
+                and not string.find(lname, "jump") then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    return ok and result or false
+end
+
+local lastParryTime = 0
+
+local function ApplyAutoParry()
+    if not Remotes.Parry then return end
+    if os.clock() - lastParryTime < CONFIG.parry.cooldown then return end
+
+    local character = LocalPlayer.Character
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return end
+
+    for _, enemy in ipairs(enemies:GetChildren()) do
+        local hum = enemy:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then
+            local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+                or enemy:FindFirstChild("Main")
+                or enemy:FindFirstChild("Head")
+            if eRoot then
+                local dist = (rootPart.Position - eRoot.Position).Magnitude
+                if dist <= CONFIG.parry.range then
+                    if IsEnemyAttacking(enemy) then
+                        pcall(function()
+                            if CONFIG.parry.forceReflector then
+                                Remotes.Parry:FireServer("Reflector")
+                            else
+                                Remotes.Parry:FireServer()
+                            end
+                        end)
+                        lastParryTime = os.clock()
+                        return -- one parry per cycle
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ===================================================================
+--             PARRY FLASH DISABLER  (new)
+-- Clamps ColorCorrectionEffect brightness in Lighting so
+-- screen-flash effects are suppressed without breaking normal light.
+-- ===================================================================
+local savedFlashStates = {}
+
+local function ApplyParryFlashDisable()
+    pcall(function()
+        for _, v in ipairs(Lighting:GetChildren()) do
+            if v:IsA("ColorCorrectionEffect") then
+                if not savedFlashStates[v] then
+                    savedFlashStates[v] = { brightness = v.Brightness, tint = v.TintColor, contrast = v.Contrast }
+                end
+                if v.Brightness > 0.15 then v.Brightness = 0.15 end
+            end
+        end
+        -- Also suppress flash inside the player's PlayerGui
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, ui in ipairs(pg:GetDescendants()) do
+                if ui:IsA("Frame") and (string.find(string.lower(ui.Name), "flash") or string.find(string.lower(ui.Name), "white")) then
+                    if ui.BackgroundTransparency < 0.8 then
+                        ui.BackgroundTransparency = 1
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function RestoreParryFlash()
+    pcall(function()
+        for inst, state in pairs(savedFlashStates) do
+            if inst and inst.Parent then
+                inst.Brightness = state.brightness
+                inst.TintColor  = state.tint
+                inst.Contrast   = state.contrast
+            end
+        end
+    end)
+    table.clear(savedFlashStates)
+end
+
+-- ===================================================================
+--                      ESP SYSTEM  (new)
+-- Drawing-based health bars + floating damage numbers over enemies.
+-- ===================================================================
+local ESP_POOL_SIZE = 25
+local espPool = {}
+local allESPDrawings = {}
+
+local function MakeESPDrawing(drawType)
+    local d = Drawing.new(drawType)
+    table.insert(allESPDrawings, d)
+    return d
+end
+
+for i = 1, ESP_POOL_SIZE do
+    local nameText = MakeESPDrawing('Text')
+    nameText.Outline = true  nameText.Size = 13  nameText.Visible = false  nameText.Color = Color3.fromRGB(255, 255, 255)
+
+    local hpBg = MakeESPDrawing('Square')
+    hpBg.Filled = true  hpBg.Visible = false  hpBg.Color = Color3.fromRGB(30, 30, 30)
+
+    local hpFill = MakeESPDrawing('Square')
+    hpFill.Filled = true  hpFill.Visible = false
+
+    local hpText = MakeESPDrawing('Text')
+    hpText.Outline = true  hpText.Size = 11  hpText.Visible = false  hpText.Color = Color3.fromRGB(200, 200, 200)
+
+    local dmgText = MakeESPDrawing('Text')
+    dmgText.Outline = true  dmgText.Size = 15  dmgText.Visible = false  dmgText.Color = Color3.fromRGB(255, 70, 70)
+
+    espPool[i] = {
+        nameText = nameText,
+        hpBg     = hpBg,
+        hpFill   = hpFill,
+        hpText   = hpText,
+        dmgText  = dmgText,
+        lastHP   = nil,
+        dmgAmt   = 0,
+        dmgTime  = 0,
+        enemy    = nil,
+    }
+end
+
+local function HideESPEntry(e)
+    e.nameText.Visible = false
+    e.hpBg.Visible     = false
+    e.hpFill.Visible   = false
+    e.hpText.Visible   = false
+    e.dmgText.Visible  = false
+    e.enemy = nil
+end
+
+local function HideAllESP()
+    for i = 1, ESP_POOL_SIZE do HideESPEntry(espPool[i]) end
+end
+
+local function UpdateESP()
+    local showHealth = CONFIG.health.esp
+    local showDamage = CONFIG.damage.esp
+    if not showHealth and not showDamage then HideAllESP() return end
+
+    local cam = Workspace.CurrentCamera
+    if not cam then HideAllESP() return end
+
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then HideAllESP() return end
+
+    local enemyList = enemies:GetChildren()
+    for i = 1, ESP_POOL_SIZE do
+        local entry = espPool[i]
+        local enemy = enemyList[i]
+
+        if not enemy then
+            HideESPEntry(entry)
+        else
+            local hum = enemy:FindFirstChildOfClass("Humanoid")
+            local rootPart = enemy:FindFirstChild("HumanoidRootPart")
+                or enemy:FindFirstChild("Head")
+                or enemy:FindFirstChild("Main")
+
+            if not hum or not rootPart or hum.Health <= 0 then
+                HideESPEntry(entry)
+                entry.lastHP = nil
+            else
+                local worldPos = rootPart.Position + Vector3.new(0, 3.5, 0)
+                local screenPos, onScreen = cam:WorldToViewportPoint(worldPos)
+
+                if not onScreen then
+                    HideESPEntry(entry)
+                else
+                    local sx, sy = screenPos.X, screenPos.Y
+                    local depth = math.max(screenPos.Z, 1)
+                    local barW = clamp(math.floor(800 / depth), 30, 80)
+                    local barH = 4
+
+                    if showHealth then
+                        local eName = enemy.Name
+                        local nameW = #eName * ESP_CHAR_WIDTH
+                        entry.nameText.Text     = eName
+                        entry.nameText.Position = Vector2.new(sx - nameW / 2, sy - 28)
+                        entry.nameText.Visible  = true
+
+                        entry.hpBg.Position = Vector2.new(sx - barW / 2, sy - 14)
+                        entry.hpBg.Size     = Vector2.new(barW, barH)
+                        entry.hpBg.Visible  = true
+
+                        local pct = clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+                        entry.hpFill.Position = Vector2.new(sx - barW / 2, sy - 14)
+                        entry.hpFill.Size     = Vector2.new(math.max(barW * pct, 0), barH)
+                        entry.hpFill.Color    = Color3.fromRGB(255 * (1 - pct), 255 * pct, 0)
+                        entry.hpFill.Visible  = true
+
+                        local hpStr = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+                        local hpStrW = #hpStr * ESP_CHAR_WIDTH
+                        entry.hpText.Text     = hpStr
+                        entry.hpText.Position = Vector2.new(sx - hpStrW / 2, sy - 8)
+                        entry.hpText.Visible  = true
+                    else
+                        entry.nameText.Visible = false
+                        entry.hpBg.Visible     = false
+                        entry.hpFill.Visible   = false
+                        entry.hpText.Visible   = false
+                    end
+
+                    if showDamage then
+                        if entry.lastHP and entry.lastHP > hum.Health then
+                            entry.dmgAmt  = math.floor(entry.lastHP - hum.Health)
+                            entry.dmgTime = os.clock()
+                        end
+                        entry.lastHP = hum.Health
+
+                        local elapsed = os.clock() - entry.dmgTime
+                        if entry.dmgAmt > 0 and elapsed < 1.8 then
+                            local fadeT  = clamp(1 - elapsed / 1.8, 0, 1)
+                            local floatY = (1 - fadeT) * 35
+                            local dStr   = "-" .. tostring(entry.dmgAmt)
+                            local dStrW  = #dStr * (ESP_CHAR_WIDTH + 1)
+                            entry.dmgText.Text         = dStr
+                            entry.dmgText.Position     = Vector2.new(sx - dStrW / 2, sy - 40 - floatY)
+                            entry.dmgText.Transparency = fadeT
+                            entry.dmgText.Visible      = true
+                        else
+                            entry.dmgText.Visible = false
+                            if elapsed >= 1.8 then entry.dmgAmt = 0 end
+                        end
+                    else
+                        entry.dmgText.Visible = false
+                    end
+
+                    entry.enemy = enemy
+                end -- onScreen
+            end -- hum valid
+        end -- enemy exists
+    end
+end
+
+local function DestroyESP()
+    for _, d in ipairs(allESPDrawings) do pcall(function() d:Remove() end) end
+    table.clear(allESPDrawings)
+    table.clear(espPool)
+end
+
+-- ===================================================================
+--                     WATERMARK STATUS
+-- ===================================================================
+local function GetStatus()
+    local p = {}
+    if CONFIG.statMod.enabled     then table.insert(p, "Stats")   end
+    if CONFIG.hitbox.enabled      then table.insert(p, "Hitbox")  end
+    if CONFIG.damage.esp          then table.insert(p, "DmgESP")  end
+    if CONFIG.damage.heavyForce   then table.insert(p, "HvyDmg")  end
+    if CONFIG.parry.auto          then table.insert(p, "AParry")  end
+    if CONFIG.parry.disableFlash  then table.insert(p, "NoFlash") end
+    if CONFIG.parry.forceReflector then table.insert(p, "Reflect") end
+    if CONFIG.health.autoHeal     then table.insert(p, "AHeal")   end
+    if CONFIG.health.esp          then table.insert(p, "HP-ESP")  end
+    if CONFIG.stamina.infinite    then table.insert(p, "InfStam") end
+    if #p == 0 then return "Idle" end
+    return table.concat(p, " | ")
+end
+
+-- ===================================================================
+--                       UI SETUP
+-- ===================================================================
+local myGui = UILib.new("CI // Matcha", Vector2.new(420, 480), {GetStatus})
 local running = true
 
+-- ========== TAB 1: Main ==========
 local mainTab = myGui:Tab("Main")
 
 local statSection = myGui:Section(mainTab, "Stat Modifier")
@@ -581,31 +1018,157 @@ end)
 myGui:Slider(mainTab, hitboxSection, "Size", CONFIG.hitbox.size, function(v) CONFIG.hitbox.size = v end, 5, 100, 1, " studs")
 myGui:Slider(mainTab, hitboxSection, "Mark Size", CONFIG.hitbox.markSize, function(v) CONFIG.hitbox.markSize = v end, 5, 150, 1, " studs")
 
-local utilTab = myGui:Tab("Utility")
+-- ========== TAB 2: Combat ==========
+local combatTab = myGui:Tab("Combat")
+
+local damageSection = myGui:Section(combatTab, "Damage")
+myGui:Checkbox(combatTab, damageSection, "Damage ESP", CONFIG.damage.esp, function(s)
+    CONFIG.damage.esp = s
+    if not s then HideAllESP() end
+end)
+myGui:Checkbox(combatTab, damageSection, "Heavy Damage Force", CONFIG.damage.heavyForce, function(s)
+    CONFIG.damage.heavyForce = s
+    if not s then pcall(RestoreHeavyDamage) end
+end)
+
+local parrySection = myGui:Section(combatTab, "Parry")
+myGui:Checkbox(combatTab, parrySection, "Auto Parry", CONFIG.parry.auto, function(s) CONFIG.parry.auto = s end)
+myGui:Slider(combatTab, parrySection, "Range", CONFIG.parry.range, function(v) CONFIG.parry.range = v end, 5, 60, 1, " studs")
+myGui:Slider(combatTab, parrySection, "Cooldown", CONFIG.parry.cooldown, function(v) CONFIG.parry.cooldown = v end, 0.1, 2.0, 0.1, "s")
+myGui:Checkbox(combatTab, parrySection, "Disable Flash", CONFIG.parry.disableFlash, function(s)
+    CONFIG.parry.disableFlash = s
+    if not s then pcall(RestoreParryFlash) end
+end)
+myGui:Checkbox(combatTab, parrySection, "Reflector Parry", CONFIG.parry.forceReflector, function(s) CONFIG.parry.forceReflector = s end)
+
+-- ========== TAB 3: Survival ==========
+local survivalTab = myGui:Tab("Survival")
+
+local healthSection = myGui:Section(survivalTab, "Health")
+myGui:Checkbox(survivalTab, healthSection, "Auto Heal", CONFIG.health.autoHeal, function(s) CONFIG.health.autoHeal = s end)
+myGui:Slider(survivalTab, healthSection, "Threshold", CONFIG.health.threshold, function(v) CONFIG.health.threshold = v end, 5, 95, 5, "%")
+myGui:Checkbox(survivalTab, healthSection, "Health ESP", CONFIG.health.esp, function(s)
+    CONFIG.health.esp = s
+    if not s then HideAllESP() end
+end)
+
+local staminaSection = myGui:Section(survivalTab, "Stamina")
+myGui:Checkbox(survivalTab, staminaSection, "Infinite Stamina", CONFIG.stamina.infinite, function(s) CONFIG.stamina.infinite = s end)
+
+-- ========== TAB 4: Utility ==========
+local utilTab = myGui:Tab("Util")
+
 local scriptSection = myGui:Section(utilTab, "Script")
 myGui:Button(utilTab, scriptSection, "Restore Hitboxes", function() pcall(RestoreHitbox) end)
-myGui:Checkbox(utilTab, scriptSection, "Unload", false, function(s)
+myGui:Button(utilTab, scriptSection, "Restore Heavy Dmg", function() pcall(RestoreHeavyDamage) end)
+myGui:Button(utilTab, scriptSection, "Restore Flash FX", function() pcall(RestoreParryFlash) end)
+
+local infoSection = myGui:Section(utilTab, "Info")
+myGui:Button(utilTab, infoSection, "Print Remotes Found", function()
+    for name, remote in pairs(Remotes) do
+        if remote then
+            print("[CI] Remote: " .. name .. " -> " .. tostring(remote:GetFullName()))
+        else
+            print("[CI] Remote: " .. name .. " -> NOT FOUND")
+        end
+    end
+end)
+myGui:Checkbox(utilTab, infoSection, "Unload", false, function(s)
     if s then
         running = false
         pcall(RestoreStatMod)
         pcall(RestoreHitbox)
+        pcall(RestoreHeavyDamage)
+        pcall(RestoreParryFlash)
+        HideAllESP()
+        DestroyESP()
         myGui:Destroy()
     end
 end)
 
--- =====================
--- INIT
--- =====================
-print("Combat Initiation Menu Loaded.")
+-- ===================================================================
+--                            INIT
+-- ===================================================================
+print("[CI] Combat Initiation loaded.")
+print("[CI] Remotes found:")
+for name, remote in pairs(Remotes) do
+    print("  " .. name .. ": " .. (remote and remote:GetFullName() or "NOT FOUND"))
+end
 
--- =====================
--- MAIN LOOPS
--- =====================
--- UI renders every frame (needs to stay smooth)
-spawn(function() while running do myGui:Step() task.wait() end end)
--- Stat re-apply: attributes don't need 60fps refresh, throttle to 0.1s
-spawn(function() while running do if CONFIG.statMod.enabled then pcall(ApplyStatMod) end task.wait(0.1) end end)
--- Hitbox re-apply: throttled to 0.1s (new enemies spawn over time)
-spawn(function() while running do if CONFIG.hitbox.enabled then pcall(ApplyHitbox) end task.wait(0.1) end end)
+-- ===================================================================
+--                         MAIN LOOPS
+-- ===================================================================
+-- UI render (every frame)
+spawn(function()
+    while running do
+        myGui:Step()
+        task.wait()
+    end
+end)
 
+-- ESP render (every frame, separate from UI for clarity)
+spawn(function()
+    while running do
+        pcall(UpdateESP)
+        task.wait()
+    end
+end)
+
+-- Stat re-apply: throttled to 0.1s
+spawn(function()
+    while running do
+        if CONFIG.statMod.enabled then pcall(ApplyStatMod) end
+        task.wait(0.1)
+    end
+end)
+
+-- Hitbox re-apply: throttled to 0.1s
+spawn(function()
+    while running do
+        if CONFIG.hitbox.enabled then pcall(ApplyHitbox) end
+        task.wait(0.1)
+    end
+end)
+
+-- Heavy damage force: throttled to 0.1s
+spawn(function()
+    while running do
+        if CONFIG.damage.heavyForce then pcall(ApplyHeavyDamage) end
+        task.wait(0.1)
+    end
+end)
+
+-- Infinite stamina: throttled to 0.2s
+spawn(function()
+    while running do
+        if CONFIG.stamina.infinite then pcall(ApplyInfiniteStamina) end
+        task.wait(0.2)
+    end
+end)
+
+-- Auto heal: throttled to 0.3s
+spawn(function()
+    while running do
+        if CONFIG.health.autoHeal then pcall(ApplyAutoHeal) end
+        task.wait(0.3)
+    end
+end)
+
+-- Auto parry: needs fast polling (~0.05s) for tight timing
+spawn(function()
+    while running do
+        if CONFIG.parry.auto then pcall(ApplyAutoParry) end
+        task.wait(0.05)
+    end
+end)
+
+-- Parry flash disabler: throttled to 0.1s
+spawn(function()
+    while running do
+        if CONFIG.parry.disableFlash then pcall(ApplyParryFlashDisable) end
+        task.wait(0.1)
+    end
+end)
+
+-- Keep-alive
 while running do task.wait(0.1) end
