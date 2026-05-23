@@ -422,8 +422,6 @@ end
 local CONFIG = {
     statMod = {
         enabled = false,
-        utilityBoost = 64,
-        aggroMultiplier = 100,
         lifesteal = 21,
     },
     hitbox = {
@@ -444,8 +442,7 @@ local Workspace = game:GetService("Workspace")
 local originalSizes = {}
 local originalAttributes = setmetatable({}, {__mode = "k"})
 local statTrackedInstances = setmetatable({}, {__mode = "k"})
-local STAT_CHARACTER_ATTRIBUTES = {"UtilityBoost", "AggroMultiplier"}
-local STAT_TOOL_ATTRIBUTES = {"Firerate", "Swingrate", "LungeRate", "OffhandSwingRate", "Windup", "ChargeRate", "ChargeTime", "Cooldown", "Spread", "Lifesteal"}
+local STAT_TOOL_ATTRIBUTES = {"Lifesteal"}
 
 local function RememberAttributes(instance, names)
     if not instance then return end
@@ -493,24 +490,10 @@ local function ApplyStatMod()
     local character = LocalPlayer.Character
     if not character then return end
     local cfg = CONFIG.statMod
-    TrackStatInstance(character, STAT_CHARACTER_ATTRIBUTES)
-    pcall(function()
-        character:SetAttribute("UtilityBoost", cfg.utilityBoost)
-        character:SetAttribute("AggroMultiplier", cfg.aggroMultiplier)
-    end)
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
         TrackStatInstance(tool, STAT_TOOL_ATTRIBUTES)
         pcall(function()
-            tool:SetAttribute("Firerate", 0)
-            tool:SetAttribute("Swingrate", 0)
-            tool:SetAttribute("LungeRate", 0)
-            tool:SetAttribute("OffhandSwingRate", 0)
-            tool:SetAttribute("Windup", 0)
-            tool:SetAttribute("ChargeRate", 0)
-            tool:SetAttribute("ChargeTime", 0)
-            tool:SetAttribute("Cooldown", 0)
-            tool:SetAttribute("Spread", 0)
             tool:SetAttribute("Lifesteal", cfg.lifesteal)
         end)
     end
@@ -588,9 +571,7 @@ myGui:Checkbox(mainTab, statSection, "Enable", CONFIG.statMod.enabled, function(
     CONFIG.statMod.enabled = s
     if not s then pcall(RestoreStatMod) end
 end)
-myGui:Slider(mainTab, statSection, "Utility Boost", CONFIG.statMod.utilityBoost, function(v) CONFIG.statMod.utilityBoost = v end, 1, 700, 1, "")
 myGui:Slider(mainTab, statSection, "Lifesteal", CONFIG.statMod.lifesteal, function(v) CONFIG.statMod.lifesteal = v end, 0, 200, 1, "")
-myGui:Slider(mainTab, statSection, "Aggro Mult", CONFIG.statMod.aggroMultiplier, function(v) CONFIG.statMod.aggroMultiplier = v end, 1, 100, 1, "")
 
 local hitboxSection = myGui:Section(mainTab, "Hitbox Expander")
 myGui:Checkbox(mainTab, hitboxSection, "Enable", CONFIG.hitbox.enabled, function(s)
