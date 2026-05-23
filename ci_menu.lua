@@ -5,7 +5,8 @@
 local UILib = {}
 UILib.__index = UILib
 
-local ESP_FONTSIZE = 7
+local ESP_FONTSIZE = 12
+local ESP_CHAR_WIDTH = 7
 local BLACK = Color3.new(0, 0, 0)
 local myPlayer = game:GetService('Players').LocalPlayer
 local myMouse = myPlayer:GetMouse()
@@ -87,6 +88,8 @@ function UILib.new(name, size, watermarkActivity)
     self._base_opacity = 0
     self._dragging = false
     self._drag_offset = Vector2.new(0, 0)
+    self._resizing = false
+    self._resize_offset = Vector2.new(0, 0)
     self._active_dropdown = nil
     self._active_colorpicker = nil
     self._clipboard_color = nil
@@ -98,6 +101,12 @@ function UILib.new(name, size, watermarkActivity)
     self.y = 60
     self.w = size and size.x or 300
     self.h = size and size.y or 400
+    self._target_w = self.w
+    self._target_h = self.h
+    self._min_w = 320
+    self._min_h = 320
+    self._max_w = 720
+    self._max_h = 720
     self._color_accent_base = Color3.fromRGB(0, 220, 170)
     self._color_accent = self._color_accent_base
     self._color_accent_alt = Color3.fromRGB(120, 185, 255)
@@ -109,8 +118,8 @@ function UILib.new(name, size, watermarkActivity)
     self._color_surface_2 = Color3.fromRGB(20, 29, 42)
     self._color_overlay = Color3.fromRGB(47, 66, 84)
     self._color_hover = Color3.fromRGB(31, 47, 66)
-    self._title_h = 30
-    self._tab_h = 24
+    self._title_h = 34
+    self._tab_h = 28
     self._padding = 8
     self._gradient_detail = 80
 
@@ -118,18 +127,20 @@ function UILib.new(name, size, watermarkActivity)
     local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
     local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_border
     local navbar = Drawing.new('Square') navbar.Filled = true navbar.Color = self._color_border
-    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text title.Size = 13
+    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text title.Size = 15
     local watermarkBase = Drawing.new('Square') watermarkBase.Filled = true watermarkBase.Color = self._color_surface
     local watermarkCursor = Drawing.new('Square') watermarkCursor.Filled = true watermarkCursor.Color = self._color_accent
     local watermarkCrust = Drawing.new('Square') watermarkCrust.Filled = false watermarkCrust.Thickness = 1 watermarkCrust.Color = self._color_crust
     local watermarkBorder = Drawing.new('Square') watermarkBorder.Filled = false watermarkBorder.Thickness = 1 watermarkBorder.Color = self._color_border
-    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text watermarkText.Size = 12
+    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text watermarkText.Size = 13
+    local resizeGrip = Drawing.new('Square') resizeGrip.Filled = true resizeGrip.Color = self._color_border
+    local resizeAccent = Drawing.new('Square') resizeAccent.Filled = true resizeAccent.Color = self._color_accent
 
-    self._tree = { ['_tabs'] = {}, ['_drawings'] = { crust, border, base, navbar, title, watermarkBase, watermarkCursor, watermarkCrust, watermarkBorder, watermarkText } }
+    self._tree = { ['_tabs'] = {}, ['_drawings'] = { crust, border, base, navbar, title, watermarkBase, watermarkCursor, watermarkCrust, watermarkBorder, watermarkText, resizeGrip, resizeAccent } }
     return self
 end
 
-function UILib._GetTextBounds(str) return #str * ESP_FONTSIZE, ESP_FONTSIZE end
+function UILib._GetTextBounds(str) return #str * ESP_CHAR_WIDTH, ESP_FONTSIZE end
 function UILib._IsMouseWithinBounds(origin, size)
     local m = getMousePos()
     return m.x >= origin.x and m.x <= origin.x + size.x and m.y >= origin.y and m.y <= origin.y + size.y
@@ -163,7 +174,7 @@ function UILib:Tab(name)
     local backdrop = Drawing.new('Square') backdrop.Color = self._color_border backdrop.Filled = true
     local shadow = Drawing.new('Square') shadow.Color = BLACK shadow.Filled = true
     local cursor = Drawing.new('Square') cursor.Color = self._color_accent cursor.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name text.Size = 12
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name text.Size = 13
     table.insert(self._tree['_tabs'], { ['name'] = name, ['_sections'] = {}, ['_drawings'] = { backdrop, shadow, cursor, text } })
     if self._active_tab == nil then self._active_tab = name end
     return name
@@ -175,7 +186,7 @@ function UILib:Section(tabName, name)
             local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
             local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
             local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_overlay
-            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text title.Size = 12
+            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text title.Size = 13
             table.insert(tab._sections, { ['name'] = name, ['_items'] = {}, ['_drawings'] = { base, crust, border, title } })
             return name
         end
@@ -201,7 +212,7 @@ function UILib:Checkbox(tabName, sectionName, label, defaultValue, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local check = Drawing.new('Square') check.Color = self._color_accent check.Filled = true
     local checkShadow = Drawing.new('Square') checkShadow.Color = BLACK checkShadow.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
     self:_AddToSection(tabName, sectionName, 'checkbox', defaultValue, callback, { outline, check, checkShadow, text })
 end
 
@@ -209,15 +220,15 @@ function UILib:Slider(tabName, sectionName, label, defaultValue, callback, min, 
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Filled = true
     local fill = Drawing.new('Square') fill.Color = self._color_accent fill.Filled = true
     local fillShadow = Drawing.new('Square') fillShadow.Color = BLACK fillShadow.Filled = true
-    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label value.Size = 12
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
+    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label value.Size = 13
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
     self:_AddToSection(tabName, sectionName, 'slider', defaultValue, callback, { outline, fill, fillShadow, value, text }, { ['min'] = min, ['max'] = max, ['step'] = step, ['appendix'] = appendix })
 end
 
 function UILib:Button(tabName, sectionName, label, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 12
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
     self:_AddToSection(tabName, sectionName, 'button', nil, callback, { outline, fill, text }, { ['label'] = label })
 end
 
@@ -241,8 +252,10 @@ function UILib:Step()
     local clickFrame = menuOpen and self._inputs['m1'].click
     local m1Held = menuOpen and self._inputs['m1'].held
     local baseOpacity = self._base_opacity
-    local childrenVisible = baseOpacity > 0.22
-    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 15), 0, 1)
+    local childrenVisible = baseOpacity > 0.08
+    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 18), 0, 1)
+    self.w = lerp(self.w, self._target_w, deltaTime * 20)
+    self.h = lerp(self.h, self._target_h, deltaTime * 20)
     setrobloxinput(not menuOpen)
 
     local watermarkBase = self._tree['_drawings'][6]
@@ -293,11 +306,30 @@ function UILib:Step()
     end
 
     local uiCrust = self._tree['_drawings'][1] local uiBorder = self._tree['_drawings'][2] local uiBase = self._tree['_drawings'][3] local uiNavbar = self._tree['_drawings'][4] local uiTitle = self._tree['_drawings'][5]
+    local resizeGrip = self._tree['_drawings'][11] local resizeAccent = self._tree['_drawings'][12]
     uiBase.Position = Vector2.new(self.x, self.y) uiBase.Size = Vector2.new(self.w, self.h) uiBase.Transparency = baseOpacity uiBase.Visible = childrenVisible uiBase.Color = self._color_surface
     uiBorder.Position = Vector2.new(self.x + 1, self.y + 1) uiBorder.Size = Vector2.new(self.w - 2, self.h - 2) uiBorder.Transparency = baseOpacity uiBorder.Visible = childrenVisible uiBorder.Color = self._color_border
     uiCrust.Position = Vector2.new(self.x, self.y) uiCrust.Size = Vector2.new(self.w, self.h) uiCrust.Transparency = baseOpacity uiCrust.Visible = childrenVisible uiCrust.Color = self._color_crust
     uiNavbar.Position = Vector2.new(self.x + 2, self.y + 2) uiNavbar.Size = Vector2.new(self.w - 4, self._title_h - 4) uiNavbar.Transparency = baseOpacity uiNavbar.Visible = childrenVisible uiNavbar.Color = self._color_surface_2
     local _titleW, titleH = self._GetTextBounds('') uiTitle.Position = Vector2.new(self.x + 10, self.y + self._title_h / 2 - titleH + 2) uiTitle.Transparency = baseOpacity uiTitle.Visible = childrenVisible uiTitle.Color = self._color_text
+    local gripSize = Vector2.new(18, 18)
+    local gripPosition = Vector2.new(self.x + self.w - gripSize.x - 4, self.y + self.h - gripSize.y - 4)
+    local gripHover = self._IsMouseWithinBounds(gripPosition - Vector2.new(4, 4), gripSize + Vector2.new(8, 8))
+    resizeGrip.Position = gripPosition resizeGrip.Size = gripSize resizeGrip.Transparency = 0.55 * baseOpacity resizeGrip.Visible = childrenVisible resizeGrip.Color = gripHover and self._color_hover or self._color_surface_2
+    resizeAccent.Position = gripPosition + Vector2.new(6, 6) resizeAccent.Size = Vector2.new(10, 10) resizeAccent.Transparency = baseOpacity resizeAccent.Visible = childrenVisible resizeAccent.Color = self._color_accent
+    if gripHover and clickFrame then
+        self._resizing = true
+        self._resize_offset = Vector2.new((self.x + self._target_w) - mousePos.x, (self.y + self._target_h) - mousePos.y)
+    end
+    if self._resizing then
+        if m1Held then
+            self._target_w = clamp(mousePos.x - self.x + self._resize_offset.x, self._min_w, self._max_w)
+            self._target_h = clamp(mousePos.y - self.y + self._resize_offset.y, self._min_h, self._max_h)
+        else
+            self._resizing = false
+        end
+        clickFrame = false
+    end
     local titleOrigin = Vector2.new(self.x, self.y) local titleSize = Vector2.new(self.w, self._title_h)
     if self._IsMouseWithinBounds(titleOrigin, titleSize) then if clickFrame then self._dragging = true self._drag_offset = mousePos - titleOrigin end end
     if self._dragging then if m1Held then self.x = mousePos.x - self._drag_offset.x self.y = mousePos.y - self._drag_offset.y else self._dragging = false end clickFrame = false end
@@ -390,7 +422,6 @@ end
 local CONFIG = {
     statMod = {
         enabled = false,
-        dashRegen = 1/10, -- 0.1 written as division (Matcha decimal-literal safety)
         utilityBoost = 64,
         aggroMultiplier = 100,
         lifesteal = 21,
@@ -399,16 +430,6 @@ local CONFIG = {
         enabled = false,
         size = 40,
         markSize = 80,
-    },
-    ability = {
-        enabled = false,
-        fx = false, -- cosmetic particle FX (only works if game has the DarkShift emitters)
-        maxDashes = 6,
-        buffDuration = 16,
-        cooldown = 40,
-        buffDashRegen = 25/10, -- 2.5 (decimal-safe division)
-        restDashRegen = 15/10, -- 1.5
-        restMaxDashes = 3,
     },
 }
 
@@ -423,11 +444,8 @@ local Workspace = game:GetService("Workspace")
 local originalSizes = {}
 local originalAttributes = setmetatable({}, {__mode = "k"})
 local statTrackedInstances = setmetatable({}, {__mode = "k"})
-local abilityTrackedInstances = setmetatable({}, {__mode = "k"})
-local STAT_CHARACTER_ATTRIBUTES = {"DashRegenTime", "Cooldown", "UtilityBoost", "AggroMultiplier"}
+local STAT_CHARACTER_ATTRIBUTES = {"UtilityBoost", "AggroMultiplier"}
 local STAT_TOOL_ATTRIBUTES = {"Firerate", "Swingrate", "LungeRate", "OffhandSwingRate", "Windup", "ChargeRate", "ChargeTime", "Cooldown", "Spread", "Lifesteal"}
-local ABILITY_ATTRIBUTES = {"DashRegenTime", "MaxDashes", "Dashes"}
-local abilityState
 
 local function RememberAttributes(instance, names)
     if not instance then return end
@@ -461,38 +479,11 @@ local function TrackStatInstance(instance, names)
     statTrackedInstances[instance] = names
 end
 
-local function TrackAbilityInstance(instance)
-    RememberAttributes(instance, ABILITY_ATTRIBUTES)
-    abilityTrackedInstances[instance] = ABILITY_ATTRIBUTES
-end
-
 local function RestoreTrackedAttributes(tracked)
     for instance, names in pairs(tracked) do
         RestoreAttributes(instance, names)
     end
     table.clear(tracked)
-end
-
-local function ForceDashNormal()
-    local character = LocalPlayer.Character
-    if not character then return end
-    local dashRegen = CONFIG.ability.restDashRegen or 15/10
-    local maxDashes = CONFIG.ability.restMaxDashes or 3
-    pcall(function()
-        character:SetAttribute("DashRegenTime", dashRegen)
-        character:SetAttribute("Cooldown", dashRegen)
-        character:SetAttribute("MaxDashes", maxDashes)
-        local dashes = character:GetAttribute("Dashes")
-        if type(dashes) ~= "number" or dashes > maxDashes then
-            character:SetAttribute("Dashes", maxDashes)
-        end
-    end)
-end
-
-local function ForceDashNormalIfNoBoosts()
-    if not CONFIG.statMod.enabled and (not abilityState or not abilityState.active) then
-        ForceDashNormal()
-    end
 end
 
 -- =====================
@@ -504,8 +495,6 @@ local function ApplyStatMod()
     local cfg = CONFIG.statMod
     TrackStatInstance(character, STAT_CHARACTER_ATTRIBUTES)
     pcall(function()
-        character:SetAttribute("DashRegenTime", cfg.dashRegen)
-        character:SetAttribute("Cooldown", cfg.dashRegen)
         character:SetAttribute("UtilityBoost", cfg.utilityBoost)
         character:SetAttribute("AggroMultiplier", cfg.aggroMultiplier)
     end)
@@ -529,7 +518,6 @@ end
 
 local function RestoreStatMod()
     RestoreTrackedAttributes(statTrackedInstances)
-    ForceDashNormalIfNoBoosts()
 end
 
 -- =====================
@@ -578,138 +566,12 @@ local function RestoreHitbox()
 end
 
 -- =====================
--- ABILITY: DarkShift dash buff (self-buff + optional cosmetic FX toggle)
--- =====================
-abilityState = {
-    cd = 0,          -- current cooldown remaining (starts ready)
-    active = false,  -- buff currently running
-    fxActive = false,
-}
-local abilityToken = 0
-
--- Clones the game's DarkShift particle emitters onto a Torso attachment.
--- pcall'd and existence-checked: if the game doesn't have these instances,
--- it silently does nothing rather than erroring.
-local function SpawnFX(character)
-    pcall(function()
-        local torso = character:FindFirstChild("Torso")
-        if not torso then return end
-        local emitterFolder = torso:FindFirstChild("emitters")
-        if not emitterFolder then
-            emitterFolder = Instance.new("Folder")
-            emitterFolder.Name = "emitters"
-            emitterFolder.Parent = torso
-        end
-        local rep = game:GetService("ReplicatedStorage")
-        local fx = rep:FindFirstChild("FX")
-        local effects = fx and fx:FindFirstChild("Effects")
-        local emittersNode = effects and effects:FindFirstChild("Emitters")
-        local darkShift = emittersNode and emittersNode:FindFirstChild("DarkShift")
-        if not darkShift then return end -- game layout differs; skip quietly
-
-        local attachment = Instance.new("Attachment")
-        attachment.Name = "FXAttachment"
-        attachment.Parent = emitterFolder
-
-        local baseColor = torso.Color
-        local darkerColor = Color3.new(baseColor.R * 0.5, baseColor.G * 0.5, baseColor.B * 0.5)
-
-        for _, v in ipairs(darkShift:GetChildren()) do
-            local clone = v:Clone()
-            clone.Parent = attachment
-            if clone:IsA("ParticleEmitter") then
-                clone.Enabled = true
-                clone.LockedToPart = true
-                if clone.Name == "Shockwave" then
-                    clone.Rate = 5
-                    clone.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, baseColor),
-                        ColorSequenceKeypoint.new(1, darkerColor),
-                    })
-                end
-            end
-        end
-    end)
-end
-
-local function ClearFX(character)
-    pcall(function()
-        local torso = character:FindFirstChild("Torso")
-        local emitterFolder = torso and torso:FindFirstChild("emitters")
-        if emitterFolder then
-            for _, v in ipairs(emitterFolder:GetChildren()) do
-                v:Destroy()
-            end
-        end
-    end)
-end
-
-local function StopAbility(resetCooldown)
-    abilityToken = abilityToken + 1
-    local character = LocalPlayer.Character
-    if character then
-        RestoreTrackedAttributes(abilityTrackedInstances)
-        if abilityState.fxActive then ClearFX(character) end
-    else
-        table.clear(abilityTrackedInstances)
-    end
-    abilityState.active = false
-    abilityState.fxActive = false
-    if resetCooldown then abilityState.cd = 0 end
-    ForceDashNormalIfNoBoosts()
-end
-
-local function TriggerAbility()
-    if not CONFIG.ability.enabled then return end
-    if abilityState.cd > 0 or abilityState.active then return end
-    local character = LocalPlayer.Character
-    if not character then return end
-    local cfg = CONFIG.ability
-    TrackAbilityInstance(character)
-    abilityToken = abilityToken + 1
-    local token = abilityToken
-    abilityState.active = true
-    abilityState.cd = cfg.cooldown
-    local fxSpawned = cfg.fx
-    abilityState.fxActive = fxSpawned
-
-    if fxSpawned then SpawnFX(character) end
-
-    pcall(function()
-        character:SetAttribute("DashRegenTime", cfg.buffDashRegen)
-        character:SetAttribute("MaxDashes", cfg.maxDashes)
-        character:SetAttribute("Dashes", cfg.maxDashes)
-    end)
-
-    task.delay(cfg.buffDuration, function()
-        if token ~= abilityToken then return end
-        local char = LocalPlayer.Character
-        if char then
-            RestoreTrackedAttributes(abilityTrackedInstances)
-            if fxSpawned then ClearFX(char) end
-        end
-        abilityState.active = false
-        abilityState.fxActive = false
-        ForceDashNormalIfNoBoosts()
-    end)
-end
-
--- =====================
 -- WATERMARK STATUS
 -- =====================
 local function GetStatus()
     local parts = {}
     table.insert(parts, CONFIG.statMod.enabled and "Stats: ON" or "Stats: OFF")
     table.insert(parts, CONFIG.hitbox.enabled and "Hitbox: ON" or "Hitbox: OFF")
-    if CONFIG.ability.enabled then
-        if abilityState.active then
-            table.insert(parts, "Ability: ACTIVE")
-        elseif abilityState.cd > 0 then
-            table.insert(parts, "Ability: " .. tostring(abilityState.cd) .. "s")
-        else
-            table.insert(parts, "Ability: READY")
-        end
-    end
     return table.concat(parts, " | ")
 end
 
@@ -738,26 +600,12 @@ end)
 myGui:Slider(mainTab, hitboxSection, "Size", CONFIG.hitbox.size, function(v) CONFIG.hitbox.size = v end, 5, 100, 1, " studs")
 myGui:Slider(mainTab, hitboxSection, "Mark Size", CONFIG.hitbox.markSize, function(v) CONFIG.hitbox.markSize = v end, 5, 150, 1, " studs")
 
-local abilityTab = myGui:Tab("Ability")
-local abilitySection = myGui:Section(abilityTab, "DarkShift Dash Buff")
-myGui:Checkbox(abilityTab, abilitySection, "Enable", CONFIG.ability.enabled, function(s)
-    CONFIG.ability.enabled = s
-    if not s then pcall(StopAbility, true) end
-end)
-myGui:Checkbox(abilityTab, abilitySection, "Particle FX", CONFIG.ability.fx, function(s) CONFIG.ability.fx = s end)
-myGui:Button(abilityTab, abilitySection, "Trigger Now", function() TriggerAbility() end)
-myGui:Slider(abilityTab, abilitySection, "Max Dashes", CONFIG.ability.maxDashes, function(v) CONFIG.ability.maxDashes = v end, 1, 20, 1, "")
-myGui:Slider(abilityTab, abilitySection, "Duration", CONFIG.ability.buffDuration, function(v) CONFIG.ability.buffDuration = v end, 1, 60, 1, "s")
-myGui:Slider(abilityTab, abilitySection, "Cooldown", CONFIG.ability.cooldown, function(v) CONFIG.ability.cooldown = v end, 0, 120, 1, "s")
-
 local utilTab = myGui:Tab("Utility")
 local scriptSection = myGui:Section(utilTab, "Script")
-myGui:Button(utilTab, scriptSection, "Normalize Dash", function() pcall(ForceDashNormal) end)
 myGui:Button(utilTab, scriptSection, "Restore Hitboxes", function() pcall(RestoreHitbox) end)
 myGui:Checkbox(utilTab, scriptSection, "Unload", false, function(s)
     if s then
         running = false
-        pcall(StopAbility, true)
         pcall(RestoreStatMod)
         pcall(RestoreHitbox)
         myGui:Destroy()
@@ -778,28 +626,5 @@ spawn(function() while running do myGui:Step() task.wait() end end)
 spawn(function() while running do if CONFIG.statMod.enabled then pcall(ApplyStatMod) end task.wait(0.1) end end)
 -- Hitbox re-apply: throttled to 0.1s (new enemies spawn over time)
 spawn(function() while running do if CONFIG.hitbox.enabled then pcall(ApplyHitbox) end task.wait(0.1) end end)
--- Ability Y-key trigger: edge-detect Y (VK 0x59) so one tap = one fire
-spawn(function()
-    local wasDown = false
-    while running do
-        if CONFIG.ability.enabled and isrbxactive() then
-            local down = iskeypressed(0x59) -- Y
-            if down and not wasDown then TriggerAbility() end
-            wasDown = down
-        else
-            wasDown = false
-        end
-        task.wait()
-    end
-end)
--- Ability cooldown countdown: tick down 1 per second while enabled
-spawn(function()
-    while running do
-        if CONFIG.ability.enabled and abilityState.cd > 0 then
-            abilityState.cd = abilityState.cd - 1
-        end
-        task.wait(1)
-    end
-end)
 
 while running do task.wait(0.1) end
