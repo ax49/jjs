@@ -1,0 +1,600 @@
+-- ============================================================
+--  Dead Rails PVE Helper | Matcha
+--  Tabbed GUI + enemy ESP, item ESP, aimbot, fog, third person
+-- ============================================================
+
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local Workspace    = game:GetService("Workspace")
+local Lighting     = game:GetService("Lighting")
+local UIS          = game:GetService("UserInputService")
+
+local LP     = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- ===================== CONFIG =====================
+local S = {
+    ESP = true, ESPDistance = 1500,
+    ShowSoldiers = true, ShowTurrets = true, ShowZombies = true,
+    HealthBars = true,
+    ItemESP = false,
+    ShowWeapons = true, ShowAmmo = true, ShowHealing = true, ShowValuables = true,
+    Aimbot = false, AimKeyName = "MouseButton2",
+    AimPart = "Head", MaxAimDist = 600, Smoothness = 25, -- percent (0 = instant)
+    NoFog = false, FullBright = false, ThirdPerson = false,
+    GuiKey = "F1",
+}
+
+local ItemCategories = {
+    weapon   = {"revolver","shotgun","rifle","navy_revolver","crossbow","maxim_gun","molotov","landmine","flamethrower"},
+    ammo     = {"ammo_light","ammo_medium","ammo_heavy","ammo_shells"},
+    healing  = {"bandage","snake_oil"},
+    valuable = {"gold_bar","coal","crate","armor_pauldron","saddle","newspaper_cure","lantern","lightning_rod"},
+}
+
+-- quiet: swallow per-frame errors so the log stays readable
+local function safe(fn) pcall(fn) end
+
+-- ===================== HELPERS =====================
+local function isPlayerChar(model)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character == model then return true end
+    end
+    return false
+end
+local function myRoot()
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function inputName(input)
+    local kc = input.KeyCode
+    if kc then local ok, n = pcall(function() return kc.Name end) if ok and n and n ~= "Unknown" then return n end end
+    local uit = input.UserInputType
+    if uit then local ok, n = pcall(function() return uit.Name end) if ok and n then return n end end
+    return nil
+end
+
+local function typeOf(name)
+    if name:find("Zombie") or name:find("Runner") or name:find("Walker") then return "zombie"
+    elseif name:find("Turret") then return "turret" else return "soldier" end
+end
+local function typeEnabled(t)
+    if t == "zombie" then return S.ShowZombies
+    elseif t == "turret" then return S.ShowTurrets else return S.ShowSoldiers end
+end
+local function isHostile(m)
+    if not (m and m:IsA("Model")) then return false end
+    if m == LP.Character or isPlayerChar(m) then return false end
+    if not m.Name:match("^Model_") then return false end
+    local h = m:FindFirstChildOfClass("Humanoid")
+    return h and h.Health > 0
+end
+local function getHostiles()
+    local out = {}
+    for _, m in ipairs(Workspace:GetDescendants()) do
+        if isHostile(m) then table.insert(out, m) end
+    end
+    return out
+end
+local function rootDist(m)
+    local r = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+    local mr = myRoot()
+    if not (r and mr) then return math.huge end
+    return (r.Position - mr.Position).Magnitude
+end
+
+-- ===================== ENEMY ESP =====================
+local espCache = {}
+local function colorFor(t)
+    if t == "zombie" then return Color3.fromRGB(120,230,90)
+    elseif t == "turret" then return Color3.fromRGB(255,170,40)
+    else return Color3.fromRGB(255,60,60) end
+end
+local function makeESP(model, t)
+    if espCache[model] then return end
+    local c = colorFor(t)
+
+    -- body outline: try Highlight, fall back to SelectionBox, else billboard only
+    local outline
+    local okH = pcall(function()
+        local hl = Instance.new("Highlight")
+        hl.FillColor, hl.OutlineColor, hl.FillTransparency = c, Color3.new(1,1,1), 0.6
+        hl.Adornee, hl.Parent = model, model
+        outline = hl
+    end)
+    if not okH then
+        pcall(function()
+            local adornee = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+            local sb = Instance.new("SelectionBox")
+            sb.Color3 = c
+            sb.LineThickness = 0.05
+            sb.SurfaceTransparency = 0.7
+            sb.SurfaceColor3 = c
+            sb.Adornee = adornee
+            sb.Parent = adornee or model
+            outline = sb
+        end)
+    end
+
+    local anchor = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+    local bb = Instance.new("BillboardGui")
+    bb.Size, bb.StudsOffset, bb.AlwaysOnTop = UDim2.new(0,150,0,34), Vector3.new(0,3.2,0), true
+    bb.Adornee, bb.Parent = anchor, model
+    local lbl = Instance.new("TextLabel")
+    lbl.Size, lbl.BackgroundTransparency = UDim2.new(1,0,0,18), 1
+    lbl.TextColor3, lbl.TextStrokeTransparency = c, 0
+    lbl.Font, lbl.TextSize = Enum.Font.GothamBold, 13
+    lbl.Parent = bb
+    local barBack = Instance.new("Frame")
+    barBack.Size, barBack.Position = UDim2.new(0.7,0,0,5), UDim2.new(0.15,0,0,22)
+    barBack.BackgroundColor3, barBack.BorderSizePixel = Color3.fromRGB(35,35,40), 0
+    barBack.Parent = bb
+    local barFill = Instance.new("Frame")
+    barFill.Size = UDim2.new(1,0,1,0)
+    barFill.BackgroundColor3, barFill.BorderSizePixel = Color3.fromRGB(90,220,90), 0
+    barFill.Parent = barBack
+
+    espCache[model] = {hl=outline, bb=bb, lbl=lbl, bar=barFill, barBack=barBack}
+end
+local function clearESP(m)
+    local e = espCache[m]
+    if e then
+        if e.hl then pcall(function() e.hl:Destroy() end) end
+        if e.bb then pcall(function() e.bb:Destroy() end) end
+        espCache[m] = nil
+    end
+end
+local function clearAllESP() for m in pairs(espCache) do clearESP(m) end end
+local function pretty(name) return (name:gsub("^Model_",""):gsub("(%l)(%u)","%1 %2")) end
+
+-- ===================== ITEM ESP =====================
+local itemCache = {}
+local function itemCategory(name)
+    name = name:lower()
+    for cat, list in pairs(ItemCategories) do
+        for _, key in ipairs(list) do if name:find(key,1,true) then return cat end end
+    end
+end
+local function catEnabled(cat)
+    if cat == "weapon" then return S.ShowWeapons
+    elseif cat == "ammo" then return S.ShowAmmo
+    elseif cat == "healing" then return S.ShowHealing
+    elseif cat == "valuable" then return S.ShowValuables end
+    return false
+end
+local function itemColor(cat)
+    if cat == "weapon" then return Color3.fromRGB(200,200,255)
+    elseif cat == "ammo" then return Color3.fromRGB(255,200,120)
+    elseif cat == "healing" then return Color3.fromRGB(120,255,180)
+    else return Color3.fromRGB(255,235,120) end
+end
+local function makeItemESP(o, cat)
+    if itemCache[o] then return end
+    local part = o:IsA("BasePart") and o or o.PrimaryPart or o:FindFirstChildWhichIsA("BasePart", true)
+    if not part then return end
+    local bb = Instance.new("BillboardGui")
+    bb.Size, bb.StudsOffset, bb.AlwaysOnTop = UDim2.new(0,120,0,18), Vector3.new(0,2,0), true
+    bb.Adornee, bb.Parent = part, part
+    local lbl = Instance.new("TextLabel")
+    lbl.Size, lbl.BackgroundTransparency = UDim2.new(1,0,1,0), 1
+    lbl.TextColor3, lbl.TextStrokeTransparency = itemColor(cat), 0
+    lbl.Font, lbl.TextSize, lbl.Text = Enum.Font.GothamBold, 12, o.Name:gsub("_"," ")
+    lbl.Parent = bb
+    itemCache[o] = bb
+end
+local function clearItemESP(o) if itemCache[o] then pcall(function() itemCache[o]:Destroy() end) itemCache[o]=nil end end
+local function clearAllItemESP() for o in pairs(itemCache) do clearItemESP(o) end end
+
+-- ===================== AIMBOT =====================
+local function closestTarget()
+    if not Camera then return nil end
+    local vp = Camera.ViewportSize
+    if not vp then return nil end
+    local center = Vector2.new(vp.X/2, vp.Y/2)
+    local best, bestScore = nil, math.huge
+    for _, m in ipairs(getHostiles()) do
+        if typeEnabled(typeOf(m.Name)) then
+            local part = m:FindFirstChild(S.AimPart) or m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+            if part and rootDist(m) <= S.MaxAimDist then
+                local sp, on = Camera:WorldToViewportPoint(part.Position)
+                if on then
+                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d < bestScore then bestScore, best = d, part end
+                end
+            end
+        end
+    end
+    return best
+end
+local aiming = false
+local function aimMatches(input)
+    local n = inputName(input)
+    return n ~= nil and n == S.AimKeyName
+end
+UIS.InputBegan:Connect(function(i, gpe) if not gpe and aimMatches(i) then aiming = true end end)
+UIS.InputEnded:Connect(function(i) if aimMatches(i) then aiming = false end end)
+
+-- ===================== LIGHTING / CAMERA =====================
+local saved = {fe=Lighting.FogEnd, fs=Lighting.FogStart, b=Lighting.Brightness, ct=Lighting.ClockTime}
+local function applyLighting()
+    safe(function()
+        if S.NoFog then Lighting.FogEnd, Lighting.FogStart = 1e9, 1e9
+        else Lighting.FogEnd, Lighting.FogStart = saved.fe, saved.fs end
+        if S.FullBright then Lighting.Brightness, Lighting.ClockTime = 3, 14
+        else Lighting.Brightness, Lighting.ClockTime = saved.b, saved.ct end
+    end)
+end
+local function applyCameraMode()
+    safe(function()
+        if S.ThirdPerson then
+            LP.CameraMode = Enum.CameraMode.Classic
+            LP.CameraMaxZoomDistance = 128
+            LP.CameraMinZoomDistance = 0.5
+        else
+            LP.CameraMode = Enum.CameraMode.LockFirstPerson
+        end
+    end)
+end
+
+-- ===================== MAIN LOOP =====================
+local hostileCount = 0
+RunService.RenderStepped:Connect(function()
+    safe(function()
+        if S.ESP then
+            local live, count = {}, 0
+            for _, m in ipairs(getHostiles()) do
+                count = count + 1
+                local t = typeOf(m.Name)
+                local dist = rootDist(m)
+                if typeEnabled(t) and dist <= S.ESPDistance then
+                    live[m] = true
+                    makeESP(m, t)
+                    local e = espCache[m]
+                    if e and e.lbl then
+                        local hum = m:FindFirstChildOfClass("Humanoid")
+                        local hp = hum and hum.Health or 0
+                        local maxhp = hum and hum.MaxHealth or 100
+                        if maxhp <= 0 then maxhp = 100 end
+                        local ratio = math.clamp(hp / maxhp, 0, 1)
+                        e.lbl.Text = string.format("%s [%dm]", pretty(m.Name), math.floor(dist))
+                        e.barBack.Visible = S.HealthBars
+                        e.bar.Visible = S.HealthBars
+                        if S.HealthBars and e.bar then
+                            e.bar.Size = UDim2.new(ratio, 0, 1, 0)
+                            e.bar.BackgroundColor3 = Color3.fromRGB(
+                                math.floor(220*(1-ratio) + 90*ratio),
+                                math.floor(90*(1-ratio) + 220*ratio), 90)
+                        end
+                    end
+                end
+            end
+            hostileCount = count
+            for m in pairs(espCache) do if not live[m] or not m.Parent then clearESP(m) end end
+        else clearAllESP() end
+
+        if S.ItemESP then
+            local container = Workspace:FindFirstChild("ObjectModels")
+            local live = {}
+            if container then
+                for _, o in ipairs(container:GetChildren()) do
+                    local cat = itemCategory(o.Name)
+                    if cat and catEnabled(cat) then live[o] = true makeItemESP(o, cat) end
+                end
+            end
+            for o in pairs(itemCache) do if not live[o] or not o.Parent then clearItemESP(o) end end
+        else clearAllItemESP() end
+
+        if S.Aimbot and aiming and Camera then
+            local target = closestTarget()
+            if target then
+                local sm = math.clamp((S.Smoothness or 0) / 100, 0, 1)
+                local goal = CFrame.new(Camera.CFrame.Position, target.Position)
+                Camera.CFrame = sm <= 0 and goal or Camera.CFrame:Lerp(goal, 1 - sm)
+            end
+        end
+    end)
+end)
+
+-- ===================================================================
+--                            GUI
+-- ===================================================================
+local PALETTE = {
+    surface  = Color3.fromRGB(12,18,27),
+    surface2 = Color3.fromRGB(20,29,42),
+    border   = Color3.fromRGB(33,48,62),
+    accent   = Color3.fromRGB(0,220,170),
+    text     = Color3.fromRGB(255,255,255),
+    muted    = Color3.fromRGB(165,178,190),
+    track    = Color3.fromRGB(45,55,68),
+}
+local function corner(p, r) local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, r or 6) c.Parent = p return c end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "DeadRailsHelper"
+gui.ResetOnSpawn = false
+local okHui = pcall(function() gui.Parent = gethui() end)
+if not okHui or not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local win = Instance.new("Frame")
+win.Size = UDim2.new(0, 420, 0, 460)
+win.Position = UDim2.new(0, 40, 0.5, -230)
+win.BackgroundColor3 = PALETTE.surface
+win.BorderSizePixel = 0
+win.Parent = gui
+corner(win, 8)
+local winStroke = Instance.new("UIStroke") winStroke.Color = PALETTE.border winStroke.Parent = win
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 34)
+titleBar.BackgroundColor3 = PALETTE.surface2
+titleBar.BorderSizePixel = 0
+titleBar.Parent = win
+corner(titleBar, 8)
+local accentLine = Instance.new("Frame")
+accentLine.Size = UDim2.new(1, -8, 0, 2)
+accentLine.Position = UDim2.new(0, 4, 0, 4)
+accentLine.BackgroundColor3 = PALETTE.accent
+accentLine.BorderSizePixel = 0
+accentLine.Parent = titleBar
+
+local titleTxt = Instance.new("TextLabel")
+titleTxt.Size = UDim2.new(1, -180, 1, 0)
+titleTxt.Position = UDim2.new(0, 12, 0, 2)
+titleTxt.BackgroundTransparency = 1
+titleTxt.Text = "Dead Rails Helper"
+titleTxt.TextColor3 = PALETTE.text
+titleTxt.Font, titleTxt.TextSize = Enum.Font.GothamBold, 15
+titleTxt.TextXAlignment = Enum.TextXAlignment.Left
+titleTxt.Parent = titleBar
+
+local statusTxt = Instance.new("TextLabel")
+statusTxt.Size = UDim2.new(0, 160, 1, 0)
+statusTxt.Position = UDim2.new(1, -170, 0, 2)
+statusTxt.BackgroundTransparency = 1
+statusTxt.TextColor3 = PALETTE.muted
+statusTxt.Font, statusTxt.TextSize = Enum.Font.Gotham, 11
+statusTxt.TextXAlignment = Enum.TextXAlignment.Right
+statusTxt.Parent = titleBar
+
+local rail = Instance.new("Frame")
+rail.Size = UDim2.new(0, 96, 1, -42)
+rail.Position = UDim2.new(0, 4, 0, 38)
+rail.BackgroundColor3 = PALETTE.surface2
+rail.BorderSizePixel = 0
+rail.Parent = win
+corner(rail, 6)
+
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, -108, 1, -42)
+content.Position = UDim2.new(0, 104, 0, 38)
+content.BackgroundTransparency = 1
+content.Parent = win
+
+local tabs = {}
+local activeTab = nil
+local tabButtonY = 6
+
+local function selectTab(name)
+    activeTab = name
+    for n, t in pairs(tabs) do
+        t.page.Visible = (n == name)
+        t.button.BackgroundColor3 = (n == name) and PALETTE.accent or PALETTE.surface
+        t.button.TextColor3 = (n == name) and Color3.new(0,0,0) or PALETTE.text
+    end
+end
+
+local function Tab(name)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -8, 0, 28)
+    btn.Position = UDim2.new(0, 4, 0, tabButtonY)
+    btn.BackgroundColor3 = PALETTE.surface
+    btn.TextColor3 = PALETTE.text
+    btn.Font, btn.TextSize = Enum.Font.GothamMedium, 12
+    btn.Text = name
+    btn.AutoButtonColor = false
+    btn.Parent = rail
+    corner(btn, 5)
+    tabButtonY = tabButtonY + 32
+
+    local page = Instance.new("ScrollingFrame")
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.CanvasSize = UDim2.new(0,0,0,0)
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.Visible = false
+    page.Parent = content
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 6)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = page
+
+    tabs[name] = {page = page, button = btn}
+    btn.MouseButton1Click:Connect(function() selectTab(name) end)
+    if not activeTab then selectTab(name) end
+    return page
+end
+
+local function Section(page, name)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -8, 0, 20)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = PALETTE.accent
+    lbl.Font, lbl.TextSize = Enum.Font.GothamBold, 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = page
+end
+
+local function Checkbox(page, label, key, indent)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -8, 0, 26)
+    btn.BackgroundColor3 = PALETTE.surface2
+    btn.AutoButtonColor = false
+    btn.Text = ""
+    btn.Parent = page
+    corner(btn, 5)
+    local box = Instance.new("Frame")
+    box.Size = UDim2.new(0, 14, 0, 14)
+    box.Position = UDim2.new(0, indent and 18 or 8, 0.5, -7)
+    box.BackgroundColor3 = S[key] and PALETTE.accent or PALETTE.track
+    box.BorderSizePixel = 0
+    box.Parent = btn
+    corner(box, 3)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -36, 1, 0)
+    lbl.Position = UDim2.new(0, (indent and 38 or 28), 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = PALETTE.text
+    lbl.Font, lbl.TextSize = Enum.Font.Gotham, 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = btn
+    btn.MouseButton1Click:Connect(function()
+        S[key] = not S[key]
+        box.BackgroundColor3 = S[key] and PALETTE.accent or PALETTE.track
+        applyLighting(); applyCameraMode()
+    end)
+end
+
+local function Slider(page, label, key, min, max, suffix)
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, -8, 0, 36)
+    holder.BackgroundColor3 = PALETTE.surface2
+    holder.BorderSizePixel = 0
+    holder.Parent = page
+    corner(holder, 5)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -16, 0, 16)
+    lbl.Position = UDim2.new(0, 8, 0, 2)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = PALETTE.text
+    lbl.Font, lbl.TextSize = Enum.Font.Gotham, 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = holder
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, -16, 0, 6)
+    track.Position = UDim2.new(0, 8, 0, 24)
+    track.BackgroundColor3 = PALETTE.track
+    track.BorderSizePixel = 0
+    track.Parent = holder
+    corner(track, 3)
+    local fill = Instance.new("Frame")
+    fill.BackgroundColor3 = PALETTE.accent
+    fill.BorderSizePixel = 0
+    fill.Parent = track
+    corner(fill, 3)
+    local function setA(a)
+        a = math.clamp(a, 0, 1)
+        fill.Size = UDim2.new(a, 0, 1, 0)
+        S[key] = math.floor(min + (max - min) * a)
+        lbl.Text = string.format("%s: %d%s", label, S[key], suffix or "")
+    end
+    setA((S[key] - min) / (max - min))
+    local drag = false
+    track.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true end end)
+    UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
+    UIS.InputChanged:Connect(function(i)
+        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+            setA((i.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X)
+        end
+    end)
+end
+
+local function Keybind(page, label, key)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -8, 0, 26)
+    btn.BackgroundColor3 = PALETTE.surface2
+    btn.AutoButtonColor = false
+    btn.TextColor3 = PALETTE.text
+    btn.Font, btn.TextSize = Enum.Font.Gotham, 12
+    btn.Text = label .. ": " .. tostring(S[key])
+    btn.Parent = page
+    corner(btn, 5)
+    btn.MouseButton1Click:Connect(function()
+        btn.Text = label .. ": press..."
+        local conn
+        conn = UIS.InputBegan:Connect(function(input)
+            local n = inputName(input)
+            if n then S[key] = n btn.Text = label .. ": " .. n conn:Disconnect() end
+        end)
+    end)
+end
+
+-- drag (title bar)
+do
+    local dragging, dragStart, startPos
+    titleBar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging, dragStart, startPos = true, i.Position, win.Position
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local d = i.Position - dragStart
+            win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X, startPos.Y.Scale, startPos.Y.Offset+d.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+end
+
+-- ===== Build tabs =====
+local visualTab = Tab("Visuals")
+Section(visualTab, "Enemy ESP")
+Checkbox(visualTab, "Enabled", "ESP")
+Checkbox(visualTab, "Soldiers", "ShowSoldiers", true)
+Checkbox(visualTab, "Turrets", "ShowTurrets", true)
+Checkbox(visualTab, "Zombies", "ShowZombies", true)
+Checkbox(visualTab, "Health Bars", "HealthBars", true)
+Slider(visualTab, "Range", "ESPDistance", 200, 3000, "m")
+Section(visualTab, "Item ESP")
+Checkbox(visualTab, "Enabled", "ItemESP")
+Checkbox(visualTab, "Weapons", "ShowWeapons", true)
+Checkbox(visualTab, "Ammo", "ShowAmmo", true)
+Checkbox(visualTab, "Healing", "ShowHealing", true)
+Checkbox(visualTab, "Valuables", "ShowValuables", true)
+
+local combatTab = Tab("Combat")
+Section(combatTab, "Aimbot")
+Checkbox(combatTab, "Enabled", "Aimbot")
+Slider(combatTab, "Range", "MaxAimDist", 100, 2000, "m")
+Slider(combatTab, "Smoothness", "Smoothness", 0, 100, "%")
+Keybind(combatTab, "Aim Key", "AimKeyName")
+
+local worldTab = Tab("World")
+Section(worldTab, "Environment")
+Checkbox(worldTab, "No Fog", "NoFog")
+Checkbox(worldTab, "Full Bright", "FullBright")
+Checkbox(worldTab, "Third Person", "ThirdPerson")
+Section(worldTab, "Menu")
+Keybind(worldTab, "Menu Key", "GuiKey")
+
+-- F1 minimize/restore
+local minimized = false
+local function setMinimized(v)
+    minimized = v
+    win.Size = v and UDim2.new(0, 420, 0, 34) or UDim2.new(0, 420, 0, 460)
+    rail.Visible = not v
+    content.Visible = not v
+end
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    local n = inputName(input)
+    if n and n == S.GuiKey then setMinimized(not minimized) end
+end)
+
+-- status text
+RunService.RenderStepped:Connect(function()
+    local parts = {}
+    if S.ESP then table.insert(parts, "ESP") end
+    if S.Aimbot then table.insert(parts, "Aim") end
+    if S.ItemESP then table.insert(parts, "Items") end
+    statusTxt.Text = (#parts > 0 and table.concat(parts, " | ") or "Idle") .. "  ·  " .. hostileCount
+end)
+
+applyLighting()
+applyCameraMode()
+print("[DRH] Loaded. Press " .. S.GuiKey .. " to minimize.")
