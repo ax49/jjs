@@ -1,12 +1,16 @@
--- Combat Initiation - Matcha Menu
--- PvE wave-survival helper. Full combat suite.
--- UI by nulare | Features extended
+-- V1.6
+-- Yuji & Mahito Auto Black Flash.
+-- Domain Health Tracker.
+-- Attribute-based Auto Perfect Block (Instant/Predict, adaptive cadence) + Moveset-aware Auto Counter.
+-- Auto QTE fixed: same-letter re-rolls handled, real key hold.
+-- Counter table re-keyed to internal Moveset attribute names.
+-- ESP colorpicker Color3 bug fixed.
 
+-- UI by nulare
 local UILib = {}
 UILib.__index = UILib
 
-local ESP_FONTSIZE = 12
-local ESP_CHAR_WIDTH = 7
+local ESP_FONTSIZE = 7
 local BLACK = Color3.new(0, 0, 0)
 local myPlayer = game:GetService('Players').LocalPlayer
 local myMouse = myPlayer:GetMouse()
@@ -30,14 +34,6 @@ local function color3fromHSV(h, s, v)
     elseif i == 4 then r, g, b = t, p, v
     else r, g, b = v, p, q end
     return {r * 255, g * 255, b * 255}
-end
-
-local function mixColor(a, b, t)
-    return Color3.new(
-        a.R + (b.R - a.R) * t,
-        a.G + (b.G - a.G) * t,
-        a.B + (b.B - a.B) * t
-    )
 end
 
 local function getMousePos() return Vector2.new(myMouse.X, myMouse.Y) end
@@ -79,8 +75,30 @@ function UILib.new(name, size, watermarkActivity)
         ['u'] = { id = 0x55, held = false, click = false }, ['v'] = { id = 0x56, held = false, click = false },
         ['w'] = { id = 0x57, held = false, click = false }, ['x'] = { id = 0x58, held = false, click = false },
         ['y'] = { id = 0x59, held = false, click = false }, ['z'] = { id = 0x5A, held = false, click = false },
+        ['numpad0'] = { id = 0x60, held = false, click = false }, ['numpad1'] = { id = 0x61, held = false, click = false },
+        ['numpad2'] = { id = 0x62, held = false, click = false }, ['numpad3'] = { id = 0x63, held = false, click = false },
+        ['numpad4'] = { id = 0x64, held = false, click = false }, ['numpad5'] = { id = 0x65, held = false, click = false },
+        ['numpad6'] = { id = 0x66, held = false, click = false }, ['numpad7'] = { id = 0x67, held = false, click = false },
+        ['numpad8'] = { id = 0x68, held = false, click = false }, ['numpad9'] = { id = 0x69, held = false, click = false },
+        ['multiply'] = { id = 0x6A, held = false, click = false }, ['add'] = { id = 0x6B, held = false, click = false },
+        ['separator'] = { id = 0x6C, held = false, click = false }, ['subtract'] = { id = 0x6D, held = false, click = false },
+        ['decimal'] = { id = 0x6E, held = false, click = false }, ['divide'] = { id = 0x6F, held = false, click = false },
         ['f1'] = { id = 0x70, held = false, click = false }, ['f2'] = { id = 0x71, held = false, click = false },
         ['f3'] = { id = 0x72, held = false, click = false }, ['f4'] = { id = 0x73, held = false, click = false },
+        ['f5'] = { id = 0x74, held = false, click = false }, ['f6'] = { id = 0x75, held = false, click = false },
+        ['f7'] = { id = 0x76, held = false, click = false }, ['f8'] = { id = 0x77, held = false, click = false },
+        ['f9'] = { id = 0x78, held = false, click = false }, ['f10'] = { id = 0x79, held = false, click = false },
+        ['f11'] = { id = 0x7A, held = false, click = false }, ['f12'] = { id = 0x7B, held = false, click = false },
+        ['numlock'] = { id = 0x90, held = false, click = false }, ['scrolllock'] = { id = 0x91, held = false, click = false },
+        ['lshift'] = { id = 0xA0, held = false, click = false }, ['rshift'] = { id = 0xA1, held = false, click = false },
+        ['lctrl'] = { id = 0xA2, held = false, click = false }, ['rctrl'] = { id = 0xA3, held = false, click = false },
+        ['lalt'] = { id = 0xA4, held = false, click = false }, ['ralt'] = { id = 0xA5, held = false, click = false },
+        ['semicolon'] = { id = 0xBA, held = false, click = false }, ['plus'] = { id = 0xBB, held = false, click = false },
+        ['comma'] = { id = 0xBC, held = false, click = false }, ['minus'] = { id = 0xBD, held = false, click = false },
+        ['period'] = { id = 0xBE, held = false, click = false }, ['slash'] = { id = 0xBF, held = false, click = false },
+        ['tilde'] = { id = 0xC0, held = false, click = false }, ['lbracket'] = { id = 0xDB, held = false, click = false },
+        ['backslash'] = { id = 0xDC, held = false, click = false }, ['rbracket'] = { id = 0xDD, held = false, click = false },
+        ['quote'] = { id = 0xDE, held = false, click = false },
     }
     self._active_tab = nil
     self._open = true
@@ -88,59 +106,43 @@ function UILib.new(name, size, watermarkActivity)
     self._base_opacity = 0
     self._dragging = false
     self._drag_offset = Vector2.new(0, 0)
-    self._resizing = false
-    self._resize_offset = Vector2.new(0, 0)
     self._active_dropdown = nil
     self._active_colorpicker = nil
     self._clipboard_color = nil
     self._tick = os.clock()
-    self._pulse = 0
     self.identity = name
     self._watermark_activity = watermarkActivity
     self.x = 20
     self.y = 60
     self.w = size and size.x or 300
     self.h = size and size.y or 400
-    self._target_w = self.w
-    self._target_h = self.h
-    self._min_w = 320
-    self._min_h = 320
-    self._max_w = 720
-    self._max_h = 720
-    self._color_accent_base = Color3.fromRGB(0, 220, 170)
-    self._color_accent = self._color_accent_base
-    self._color_accent_alt = Color3.fromRGB(120, 185, 255)
+    self._color_accent = Color3.fromRGB(255, 127, 0)
     self._color_text = Color3.fromRGB(255, 255, 255)
-    self._color_muted = Color3.fromRGB(165, 178, 190)
-    self._color_crust = Color3.fromRGB(4, 8, 14)
-    self._color_border = Color3.fromRGB(33, 48, 62)
-    self._color_surface = Color3.fromRGB(12, 18, 27)
-    self._color_surface_2 = Color3.fromRGB(20, 29, 42)
-    self._color_overlay = Color3.fromRGB(47, 66, 84)
-    self._color_hover = Color3.fromRGB(31, 47, 66)
-    self._title_h = 34
-    self._tab_h = 28
-    self._padding = 8
+    self._color_crust = Color3.fromRGB(0, 0, 0)
+    self._color_border = Color3.fromRGB(25, 25, 25)
+    self._color_surface = Color3.fromRGB(38, 38, 38)
+    self._color_overlay = Color3.fromRGB(76, 76, 76)
+    self._title_h = 25
+    self._tab_h = 20
+    self._padding = 6
     self._gradient_detail = 80
 
     local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
     local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
     local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_border
     local navbar = Drawing.new('Square') navbar.Filled = true navbar.Color = self._color_border
-    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text title.Size = 15
+    local title = Drawing.new('Text') title.Text = self.identity title.Outline = true title.Color = self._color_text
     local watermarkBase = Drawing.new('Square') watermarkBase.Filled = true watermarkBase.Color = self._color_surface
     local watermarkCursor = Drawing.new('Square') watermarkCursor.Filled = true watermarkCursor.Color = self._color_accent
     local watermarkCrust = Drawing.new('Square') watermarkCrust.Filled = false watermarkCrust.Thickness = 1 watermarkCrust.Color = self._color_crust
     local watermarkBorder = Drawing.new('Square') watermarkBorder.Filled = false watermarkBorder.Thickness = 1 watermarkBorder.Color = self._color_border
-    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text watermarkText.Size = 13
-    local resizeGrip = Drawing.new('Square') resizeGrip.Filled = true resizeGrip.Color = self._color_border
-    local resizeAccent = Drawing.new('Square') resizeAccent.Filled = true resizeAccent.Color = self._color_accent
+    local watermarkText = Drawing.new('Text') watermarkText.Text = name watermarkText.Outline = true watermarkText.Color = self._color_text
 
-    self._tree = { ['_tabs'] = {}, ['_drawings'] = { crust, border, base, navbar, title, watermarkBase, watermarkCursor, watermarkCrust, watermarkBorder, watermarkText, resizeGrip, resizeAccent } }
+    self._tree = { ['_tabs'] = {}, ['_drawings'] = { crust, border, base, navbar, title, watermarkBase, watermarkCursor, watermarkCrust, watermarkBorder, watermarkText } }
     return self
 end
 
-function UILib._GetTextBounds(str) return #str * ESP_CHAR_WIDTH, ESP_FONTSIZE end
+function UILib._GetTextBounds(str) return #str * ESP_FONTSIZE, ESP_FONTSIZE end
 function UILib._IsMouseWithinBounds(origin, size)
     local m = getMousePos()
     return m.x >= origin.x and m.x <= origin.x + size.x and m.y >= origin.y and m.y <= origin.y + size.y
@@ -148,6 +150,10 @@ end
 
 function UILib:_RemoveDropdown()
     if self._active_dropdown then destroyAllDrawings(self._active_dropdown['_drawings']) self._active_dropdown = nil end
+end
+
+function UILib:_RemoveColorpicker()
+    if self._active_colorpicker then destroyAllDrawings(self._active_colorpicker['_drawings']) self._active_colorpicker = nil end
 end
 
 function UILib:_SpawnDropdown(default, choices, multi, callback, position, width)
@@ -166,6 +172,25 @@ function UILib:_SpawnDropdown(default, choices, multi, callback, position, width
     self._active_dropdown = { ['choices'] = choiceHash, ['multi'] = multi, ['callback'] = callback, ['position'] = position, ['w'] = width, ['_drawings'] = drawings }
 end
 
+function UILib:_SpawnColorpicker(default, colorLabel, callback)
+    if self._active_colorpicker then self:_RemoveColorpicker() end
+    local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
+    local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
+    local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_border
+    local titleBar = Drawing.new('Square') titleBar.Filled = true titleBar.Color = self._color_border
+    local label = Drawing.new('Text') label.Outline = true label.Color = self._color_text label.Text = colorLabel
+    local preview = Drawing.new('Square') preview.Filled = true preview.Color = self._color_surface
+    local drawings = { base, crust, border, titleBar, label, preview }
+    for _ = 1, self._gradient_detail * 3 do local s = Drawing.new('Square') s.Filled = true table.insert(drawings, s) end
+    local cursorCrustPrimary = Drawing.new('Circle') cursorCrustPrimary.Filled = false cursorCrustPrimary.Thickness = 3 cursorCrustPrimary.Radius = 6 cursorCrustPrimary.NumSides = 20 cursorCrustPrimary.Color = self._color_crust
+    local cursorBasePrimary = Drawing.new('Circle') cursorBasePrimary.Filled = false cursorBasePrimary.Thickness = 1 cursorBasePrimary.Radius = 6 cursorBasePrimary.NumSides = 20 cursorBasePrimary.Color = self._color_border
+    local cursorBaseSecondary = Drawing.new('Square') cursorBaseSecondary.Filled = true cursorBaseSecondary.Color = self._color_border
+    local cursorBorderSecondary = Drawing.new('Square') cursorBorderSecondary.Filled = false cursorBorderSecondary.Thickness = 1 cursorBorderSecondary.Color = self._color_surface
+    local cursorCrustSecondary = Drawing.new('Square') cursorCrustSecondary.Filled = false cursorCrustSecondary.Thickness = 1 cursorCrustSecondary.Color = self._color_crust
+    for _, c in ipairs{cursorBasePrimary, cursorCrustPrimary, cursorBaseSecondary, cursorCrustSecondary, cursorBorderSecondary} do table.insert(drawings, c) end
+    self._active_colorpicker = { ['callback'] = callback, ['_pallete_pos'] = nil, ['_slider_y'] = 0, ['_drawings'] = drawings }
+end
+
 function UILib:ToggleWatermark(state) self._watermark = state end
 function UILib:ToggleMenu(state) self._open = state end
 function UILib:IsMenuOpen() return self._open end
@@ -174,7 +199,7 @@ function UILib:Tab(name)
     local backdrop = Drawing.new('Square') backdrop.Color = self._color_border backdrop.Filled = true
     local shadow = Drawing.new('Square') shadow.Color = BLACK shadow.Filled = true
     local cursor = Drawing.new('Square') cursor.Color = self._color_accent cursor.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name text.Size = 13
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = name
     table.insert(self._tree['_tabs'], { ['name'] = name, ['_sections'] = {}, ['_drawings'] = { backdrop, shadow, cursor, text } })
     if self._active_tab == nil then self._active_tab = name end
     return name
@@ -186,7 +211,7 @@ function UILib:Section(tabName, name)
             local base = Drawing.new('Square') base.Filled = true base.Color = self._color_surface
             local crust = Drawing.new('Square') crust.Filled = false crust.Thickness = 1 crust.Color = self._color_crust
             local border = Drawing.new('Square') border.Filled = false border.Thickness = 1 border.Color = self._color_overlay
-            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text title.Size = 13
+            local title = Drawing.new('Text') title.Text = name title.Outline = true title.Color = self._color_text
             table.insert(tab._sections, { ['name'] = name, ['_items'] = {}, ['_drawings'] = { base, crust, border, title } })
             return name
         end
@@ -212,7 +237,7 @@ function UILib:Checkbox(tabName, sectionName, label, defaultValue, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local check = Drawing.new('Square') check.Color = self._color_accent check.Filled = true
     local checkShadow = Drawing.new('Square') checkShadow.Color = BLACK checkShadow.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
     self:_AddToSection(tabName, sectionName, 'checkbox', defaultValue, callback, { outline, check, checkShadow, text })
 end
 
@@ -220,23 +245,79 @@ function UILib:Slider(tabName, sectionName, label, defaultValue, callback, min, 
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Filled = true
     local fill = Drawing.new('Square') fill.Color = self._color_accent fill.Filled = true
     local fillShadow = Drawing.new('Square') fillShadow.Color = BLACK fillShadow.Filled = true
-    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label value.Size = 13
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
+    local value = Drawing.new('Text') value.Color = self._color_text value.Outline = true value.Text = label
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
     self:_AddToSection(tabName, sectionName, 'slider', defaultValue, callback, { outline, fill, fillShadow, value, text }, { ['min'] = min, ['max'] = max, ['step'] = step, ['appendix'] = appendix })
+end
+
+function UILib:Choice(tabName, sectionName, label, defaultValue, callback, choices, multi)
+    local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
+    local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
+    local values = Drawing.new('Text') values.Color = self._color_text values.Outline = true values.Text = label
+    local expand = Drawing.new('Text') expand.Color = self._color_text expand.Outline = true expand.Text = label
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    self:_AddToSection(tabName, sectionName, 'choice', defaultValue, callback, { outline, fill, values, expand, text }, { ['choices'] = choices, ['multi'] = multi })
+end
+
+function UILib:Colorpicker(tabName, sectionName, label, defaultValue, callback)
+    local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
+    local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
+    local shadow = Drawing.new('Square') shadow.Color = BLACK shadow.Filled = true
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    self:_AddToSection(tabName, sectionName, 'colorpicker', defaultValue, callback, { outline, fill, shadow, text }, { ['label'] = label })
 end
 
 function UILib:Button(tabName, sectionName, label, callback)
     local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
     local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
-    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label text.Size = 13
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
     self:_AddToSection(tabName, sectionName, 'button', nil, callback, { outline, fill, text }, { ['label'] = label })
+end
+
+function UILib:Keybind(tabName, sectionName, label, defaultValue, callback, mode)
+    local text = Drawing.new('Text') text.Color = self._color_text text.Outline = true text.Text = label
+    local outline = Drawing.new('Square') outline.Color = self._color_crust outline.Thickness = 1 outline.Filled = false
+    local fill = Drawing.new('Square') fill.Color = self._color_crust fill.Filled = true
+    local key = Drawing.new('Text') key.Color = self._color_text key.Outline = true
+    self:_AddToSection(tabName, sectionName, 'key', defaultValue, callback, { text, outline, fill, key }, { ['mode'] = mode or 'Hold', ['_listening'] = false, ['_state'] = nil })
+end
+
+function UILib:CreateSettingsTab(customName)
+    local menuTab = self:Tab(customName or 'Menu')
+    local menuSettings = self:Section(menuTab, 'Settings')
+    self:Keybind(menuTab, menuSettings, 'Open key', 'f1', function(state) self:ToggleMenu(state) end, 'Toggle')
+    self:Checkbox(menuTab, menuSettings, 'Watermark', true, function(state) self:ToggleWatermark(state) end)
+    self:Checkbox(menuTab, menuSettings, 'Debug', false, nil)
+    local menuTheme = self:Section(menuTab, 'Theming')
+    local presetThemes = {'X11', 'Nord', 'Dracula', 'Catppuccin'}
+    self:Choice(menuTab, menuTheme, 'Preset theme', {presetThemes[1]}, function(values)
+        local themingItems = self._tree._tabs[#self._tree._tabs]._sections[2]
+        local colorAccent = themingItems._items[2]
+        local colorBase = themingItems._items[3]
+        local colorInnerStroke = themingItems._items[4]
+        local colorOuterStroke = themingItems._items[5]
+        local colorCrust = themingItems._items[6]
+        local theme = values[1]
+        if theme == presetThemes[1] then colorAccent.value = {255, 128, 0} colorBase.value = {38, 38, 38} colorInnerStroke.value = {26, 26, 26} colorOuterStroke.value = {77, 77, 77} colorCrust.value = {0, 0, 0}
+        elseif theme == presetThemes[2] then colorAccent.value = {135, 206, 235} colorBase.value = {49, 54, 60} colorInnerStroke.value = {72, 80, 90} colorOuterStroke.value = {61, 66, 73} colorCrust.value = {88, 96, 106}
+        elseif theme == presetThemes[3] then colorAccent.value = {243, 67, 54} colorBase.value = {40, 44, 59} colorInnerStroke.value = {64, 71, 89} colorOuterStroke.value = {29, 31, 45} colorCrust.value = {72, 73, 95}
+        elseif theme == presetThemes[4] then colorAccent.value = {240, 160, 200} colorBase.value = {48, 47, 63} colorInnerStroke.value = {72, 71, 89} colorOuterStroke.value = {63, 62, 80} colorCrust.value = {33, 32, 44} end
+        colorAccent.callback(Color3.fromRGB(unpack(colorAccent.value)))
+        colorBase.callback(Color3.fromRGB(unpack(colorBase.value)))
+        colorInnerStroke.callback(Color3.fromRGB(unpack(colorInnerStroke.value)))
+        colorOuterStroke.callback(Color3.fromRGB(unpack(colorOuterStroke.value)))
+        colorCrust.callback(Color3.fromRGB(unpack(colorCrust.value)))
+    end, presetThemes, false)
+    self:Colorpicker(menuTab, menuTheme, 'Accent', {255, 128, 0}, function(c) self._color_accent = c end)
+    self:Colorpicker(menuTab, menuTheme, 'Base', {38, 38, 38}, function(c) self._color_surface = c end)
+    self:Colorpicker(menuTab, menuTheme, 'Inner stroke', {25, 25, 25}, function(c) self._color_border = c end)
+    self:Colorpicker(menuTab, menuTheme, 'Outer stroke', {76, 76, 76}, function(c) self._color_overlay = c end)
+    self:Colorpicker(menuTab, menuTheme, 'Crust', {0, 0, 0}, function(c) self._color_crust = c end)
+    return menuTab, menuSettings, menuTheme
 end
 
 function UILib:Step()
     local deltaTime = math.max(os.clock() - self._tick, 0.0035)
-    self._pulse = self._pulse + deltaTime
-    local pulse = (math.sin(self._pulse * 2.4) + 1) / 2
-    self._color_accent = mixColor(self._color_accent_base, self._color_accent_alt, pulse)
     local mousePos = getMousePos()
     for keycode, inputData in pairs(self._inputs) do
         local keycodeId = inputData['id']
@@ -246,15 +327,13 @@ function UILib:Step()
             self._inputs[keycode]['held'] = true
         else self._inputs[keycode]['held'] = false end
     end
-    if self._inputs['f1'].click then self._open = not self._open end
     local menuOpen = self._open
     local clickFrame = menuOpen and self._inputs['m1'].click
+    local ctxFrame = menuOpen and self._inputs['m2'].click
     local m1Held = menuOpen and self._inputs['m1'].held
     local baseOpacity = self._base_opacity
-    local childrenVisible = baseOpacity > 0.08
-    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 18), 0, 1)
-    self.w = lerp(self.w, self._target_w, deltaTime * 20)
-    self.h = lerp(self.h, self._target_h, deltaTime * 20)
+    local childrenVisible = baseOpacity > 0.22
+    self._base_opacity = clamp(lerp(baseOpacity, menuOpen == true and 1 or 0, deltaTime * 11), 0, 1)
     setrobloxinput(not menuOpen)
 
     local watermarkBase = self._tree['_drawings'][6]
@@ -271,12 +350,52 @@ function UILib:Step()
         local watermarkW, watermarkH = self._GetTextBounds(watermarkText)
         local watermarkPosition = Vector2.new(20, 20)
         local watermarkSize = Vector2.new(watermarkW + self._padding * 3, watermarkH + self._padding * 3)
-        watermarkBase.Position = watermarkPosition watermarkBase.Size = watermarkSize watermarkBase.Visible = true watermarkBase.Color = self._color_surface_2
+        watermarkBase.Position = watermarkPosition watermarkBase.Size = watermarkSize watermarkBase.Visible = true watermarkBase.Color = self._color_surface
         watermarkCrust.Position = watermarkPosition watermarkCrust.Size = watermarkSize watermarkCrust.Visible = true watermarkCrust.Color = self._color_crust
         watermarkBorder.Position = watermarkPosition + Vector2.new(1, 1) watermarkBorder.Size = watermarkSize + Vector2.new(-2, -2) watermarkBorder.Visible = true watermarkBorder.Color = self._color_border
-        watermarkCursor.Position = watermarkPosition + Vector2.new(2, 2) watermarkCursor.Size = Vector2.new(watermarkSize.x - 4, 2) watermarkCursor.Visible = true watermarkCursor.Color = self._color_accent
+        watermarkCursor.Position = watermarkPosition + Vector2.new(2, 2) watermarkCursor.Size = Vector2.new(watermarkSize.x - 4, 1) watermarkCursor.Visible = true watermarkCursor.Color = self._color_accent
         watermarkTitle.Position = watermarkPosition + Vector2.new(2 + self._padding, 2 + self._padding) watermarkTitle.Text = watermarkText watermarkTitle.Visible = true watermarkTitle.Color = self._color_text
     else watermarkBase.Visible = false watermarkCrust.Visible = false watermarkBorder.Visible = false watermarkCursor.Visible = false watermarkTitle.Visible = false end
+
+    if self._active_colorpicker then
+        local colorpickerDraws = self._active_colorpicker['_drawings']
+        local colorpickerBase = colorpickerDraws[1] local colorpickerCrust = colorpickerDraws[2] local colorpickerBorder = colorpickerDraws[3]
+        local colorpickerTitleBar = colorpickerDraws[4] local colorpickerLabel = colorpickerDraws[5] local colorpickerPreview = colorpickerDraws[6]
+        colorpickerPreview.Visible = false
+        local colorpickerPosition = Vector2.new(self.x + self.w + self._padding * 2, self.y)
+        local colorpickerSize = Vector2.new(200, 170 + self._title_h)
+        colorpickerBase.Position = colorpickerPosition colorpickerBase.Size = colorpickerSize colorpickerBase.Transparency = baseOpacity colorpickerBase.Visible = childrenVisible colorpickerBase.Color = self._color_surface
+        colorpickerCrust.Position = colorpickerPosition colorpickerCrust.Size = colorpickerSize colorpickerCrust.Transparency = baseOpacity colorpickerCrust.Visible = childrenVisible colorpickerCrust.Color = self._color_crust
+        colorpickerBorder.Position = colorpickerPosition + Vector2.new(1, 1) colorpickerBorder.Size = colorpickerSize - Vector2.new(2, 2) colorpickerBorder.Transparency = baseOpacity colorpickerBorder.Visible = childrenVisible colorpickerBorder.Color = self._color_border
+        colorpickerTitleBar.Position = colorpickerPosition + Vector2.new(1, 1) colorpickerTitleBar.Size = Vector2.new(colorpickerSize.x - 2, self._title_h - 3) colorpickerTitleBar.Transparency = baseOpacity colorpickerTitleBar.Visible = childrenVisible colorpickerTitleBar.Color = self._color_border
+        colorpickerLabel.Position = colorpickerPosition + Vector2.new(self._padding, self._padding) colorpickerLabel.Transparency = baseOpacity colorpickerLabel.Visible = childrenVisible colorpickerLabel.Color = self._color_text
+        local palletePosition = colorpickerPosition + Vector2.new(self._padding, self._title_h + self._padding)
+        local palleteSize = colorpickerSize.y - self._title_h - self._padding * 2
+        for i = 1, self._gradient_detail do local segment = colorpickerDraws[6 + i] local step = 1 - (i - 1) / (self._gradient_detail - 1) segment.Size = Vector2.new(palleteSize * step, palleteSize) segment.Position = palletePosition local h = clamp((self._active_colorpicker['_slider_y']) / palleteSize, 0, 1) segment.Color = Color3.fromHSV(h, step, 1) segment.Transparency = baseOpacity segment.Visible = childrenVisible end
+        for i = 1, self._gradient_detail do local segment = colorpickerDraws[6 + self._gradient_detail + i] local step = 1 - i / self._gradient_detail segment.Size = Vector2.new(palleteSize, palleteSize * step) segment.Position = palletePosition + Vector2.new(0, palleteSize * (1 - step)) segment.Color = BLACK segment.Transparency = baseOpacity * 1 / (self._gradient_detail / 3) segment.Visible = childrenVisible end
+        local hueSliderWidth = colorpickerSize.x - palleteSize - self._padding * 4
+        local hueSliderPos = palletePosition + Vector2.new(colorpickerSize.x - hueSliderWidth - self._padding * 2.5, 0)
+        for i = 1, self._gradient_detail do local segment = colorpickerDraws[6 + self._gradient_detail * 2 + i] local step = 1 - (i - 1) / self._gradient_detail segment.Size = Vector2.new(hueSliderWidth, palleteSize * step) segment.Position = hueSliderPos segment.Color = Color3.fromHSV(step, 1, 1) segment.Transparency = baseOpacity segment.Visible = childrenVisible end
+        local drawsOffset = 6 + self._gradient_detail * 3
+        local colorpickerCursorBasePrimary = colorpickerDraws[drawsOffset + 1] local colorpickerCursorCrustPrimary = colorpickerDraws[drawsOffset + 2]
+        local colorpickerCursorBaseSecondary = colorpickerDraws[drawsOffset + 3] local colorpickerCursorCrustSecondary = colorpickerDraws[drawsOffset + 4] local colorpickerCursorBorderSecondary = colorpickerDraws[drawsOffset + 5]
+        if m1Held then if self._IsMouseWithinBounds(palletePosition, Vector2.new(palleteSize, palleteSize)) then self._active_colorpicker['_pallete_pos'] = mousePos elseif self._IsMouseWithinBounds(hueSliderPos, Vector2.new(hueSliderWidth, palleteSize)) then self._active_colorpicker['_slider_y'] = mousePos.y - palletePosition.y end end
+        local palletePos = self._active_colorpicker['_pallete_pos'] or palletePosition
+        local sliderPos = hueSliderPos + Vector2.new(-2, self._active_colorpicker['_slider_y'])
+        local relPalletePos = Vector2.new(clamp((palletePos.x - palletePosition.x) / palleteSize, 0, 1), clamp((palletePos.y - palletePosition.y) / palleteSize, 0, 1))
+        local relSliderPos = clamp((self._active_colorpicker['_slider_y']) / palleteSize, 0, 1)
+        local h = relSliderPos local s = relPalletePos.x local v = 1 - relPalletePos.y
+        local newColor = color3fromHSV(h, s, v)
+        if m1Held then if self._active_colorpicker['callback'] then self._active_colorpicker['callback'](newColor) end end
+        colorpickerCursorBasePrimary.Position = palletePos colorpickerCursorBasePrimary.Color = self._color_text colorpickerCursorBasePrimary.Visible = childrenVisible
+        colorpickerCursorCrustPrimary.Position = palletePos colorpickerCursorCrustPrimary.Color = self._color_crust colorpickerCursorCrustPrimary.Visible = childrenVisible
+        local sliderCursorSize = Vector2.new(hueSliderWidth + 4, 4)
+        colorpickerCursorBaseSecondary.Size = sliderCursorSize colorpickerCursorBaseSecondary.Position = sliderPos colorpickerCursorBaseSecondary.Color = self._color_surface colorpickerCursorBaseSecondary.Visible = childrenVisible
+        colorpickerCursorCrustSecondary.Size = sliderCursorSize colorpickerCursorCrustSecondary.Position = sliderPos colorpickerCursorCrustSecondary.Color = self._color_crust colorpickerCursorCrustSecondary.Visible = childrenVisible
+        colorpickerCursorBorderSecondary.Size = sliderCursorSize + Vector2.new(-2, -2) colorpickerCursorBorderSecondary.Position = sliderPos + Vector2.new(1, 1) colorpickerCursorBorderSecondary.Color = self._color_border colorpickerCursorBorderSecondary.Visible = childrenVisible
+        if clickFrame and not self._IsMouseWithinBounds(colorpickerPosition, colorpickerSize) then self:_RemoveColorpicker() end
+        clickFrame = false
+    end
 
     if self._active_dropdown then
         local dropdownChoices = self._active_dropdown['choices'] local dropdownIsMulti = self._active_dropdown['multi'] local dropdownCallback = self._active_dropdown['callback']
@@ -305,30 +424,11 @@ function UILib:Step()
     end
 
     local uiCrust = self._tree['_drawings'][1] local uiBorder = self._tree['_drawings'][2] local uiBase = self._tree['_drawings'][3] local uiNavbar = self._tree['_drawings'][4] local uiTitle = self._tree['_drawings'][5]
-    local resizeGrip = self._tree['_drawings'][11] local resizeAccent = self._tree['_drawings'][12]
     uiBase.Position = Vector2.new(self.x, self.y) uiBase.Size = Vector2.new(self.w, self.h) uiBase.Transparency = baseOpacity uiBase.Visible = childrenVisible uiBase.Color = self._color_surface
     uiBorder.Position = Vector2.new(self.x + 1, self.y + 1) uiBorder.Size = Vector2.new(self.w - 2, self.h - 2) uiBorder.Transparency = baseOpacity uiBorder.Visible = childrenVisible uiBorder.Color = self._color_border
     uiCrust.Position = Vector2.new(self.x, self.y) uiCrust.Size = Vector2.new(self.w, self.h) uiCrust.Transparency = baseOpacity uiCrust.Visible = childrenVisible uiCrust.Color = self._color_crust
-    uiNavbar.Position = Vector2.new(self.x + 2, self.y + 2) uiNavbar.Size = Vector2.new(self.w - 4, self._title_h - 4) uiNavbar.Transparency = baseOpacity uiNavbar.Visible = childrenVisible uiNavbar.Color = self._color_surface_2
-    local _titleW, titleH = self._GetTextBounds('') uiTitle.Position = Vector2.new(self.x + 10, self.y + self._title_h / 2 - titleH + 2) uiTitle.Transparency = baseOpacity uiTitle.Visible = childrenVisible uiTitle.Color = self._color_text
-    local gripSize = Vector2.new(18, 18)
-    local gripPosition = Vector2.new(self.x + self.w - gripSize.x - 4, self.y + self.h - gripSize.y - 4)
-    local gripHover = self._IsMouseWithinBounds(gripPosition - Vector2.new(4, 4), gripSize + Vector2.new(8, 8))
-    resizeGrip.Position = gripPosition resizeGrip.Size = gripSize resizeGrip.Transparency = 0.55 * baseOpacity resizeGrip.Visible = childrenVisible resizeGrip.Color = gripHover and self._color_hover or self._color_surface_2
-    resizeAccent.Position = gripPosition + Vector2.new(6, 6) resizeAccent.Size = Vector2.new(10, 10) resizeAccent.Transparency = baseOpacity resizeAccent.Visible = childrenVisible resizeAccent.Color = self._color_accent
-    if gripHover and clickFrame then
-        self._resizing = true
-        self._resize_offset = Vector2.new((self.x + self._target_w) - mousePos.x, (self.y + self._target_h) - mousePos.y)
-    end
-    if self._resizing then
-        if m1Held then
-            self._target_w = clamp(mousePos.x - self.x + self._resize_offset.x, self._min_w, self._max_w)
-            self._target_h = clamp(mousePos.y - self.y + self._resize_offset.y, self._min_h, self._max_h)
-        else
-            self._resizing = false
-        end
-        clickFrame = false
-    end
+    uiNavbar.Position = Vector2.new(self.x + 2, self.y + 2) uiNavbar.Size = Vector2.new(self.w - 4, self._title_h - 4) uiNavbar.Transparency = baseOpacity uiNavbar.Visible = childrenVisible uiNavbar.Color = self._color_border
+    local _titleW, titleH = self._GetTextBounds('') uiTitle.Position = Vector2.new(self.x + 7, self.y + self._title_h / 2 - titleH + 2) uiTitle.Transparency = baseOpacity uiTitle.Visible = childrenVisible uiTitle.Color = self._color_text
     local titleOrigin = Vector2.new(self.x, self.y) local titleSize = Vector2.new(self.w, self._title_h)
     if self._IsMouseWithinBounds(titleOrigin, titleSize) then if clickFrame then self._dragging = true self._drag_offset = mousePos - titleOrigin end end
     if self._dragging then if m1Held then self.x = mousePos.x - self._drag_offset.x self.y = mousePos.y - self._drag_offset.y else self._dragging = false end clickFrame = false end
@@ -339,15 +439,26 @@ function UILib:Step()
         local tabBackdrop = tabDraws[1] local tabShadow = tabDraws[2] local tabCursor = tabDraws[3] local tabText = tabDraws[4]
         local tabW = (self.w - self._padding * 2 - (numTabs - 1) * 2) / numTabs local tabH = self._tab_h
         local tabPosition = Vector2.new(self.x + self._padding + (tabIndex - 1) * (tabW + 2), self.y + self._title_h + self._padding) local tabSize = Vector2.new(tabW, tabH)
-        local tabHover = self._IsMouseWithinBounds(tabPosition, tabSize)
-        tabBackdrop.Position = tabPosition tabBackdrop.Size = tabSize tabBackdrop.Transparency = baseOpacity tabBackdrop.Visible = childrenVisible tabBackdrop.Color = tabOpen and self._color_surface_2 or (tabHover and self._color_hover or self._color_border)
-        tabShadow.Position = tabPosition + Vector2.new(0, tabH - 7) tabShadow.Size = Vector2.new(tabW, 7) tabShadow.Transparency = 0.08 * baseOpacity tabShadow.Visible = childrenVisible
-        tabCursor.Position = tabPosition + Vector2.new(0, tabH - 2) tabCursor.Size = Vector2.new(tabW, 2) tabCursor.Transparency = baseOpacity tabCursor.Visible = tabOpen and childrenVisible tabCursor.Color = self._color_accent
-        tabText.Position = tabPosition + Vector2.new(6, tabH / 2 - ESP_FONTSIZE / 2) tabText.Transparency = baseOpacity tabText.Visible = childrenVisible tabText.Color = tabOpen and self._color_text or self._color_muted
-        if clickFrame and tabHover then self._active_tab = tabName end
+        tabBackdrop.Position = tabPosition tabBackdrop.Size = tabSize tabBackdrop.Transparency = baseOpacity tabBackdrop.Visible = childrenVisible tabBackdrop.Color = self._color_border
+        tabShadow.Position = tabPosition + Vector2.new(0, tabH - 8) tabShadow.Size = Vector2.new(tabW, 8) tabShadow.Transparency = 0.05 * baseOpacity tabShadow.Visible = childrenVisible
+        tabCursor.Position = tabPosition tabCursor.Size = Vector2.new(tabW, 1) tabCursor.Transparency = baseOpacity tabCursor.Visible = tabOpen and childrenVisible tabCursor.Color = self._color_accent
+        tabText.Position = tabPosition + Vector2.new(4, tabH / 2 - ESP_FONTSIZE / 2) tabText.Transparency = baseOpacity tabText.Visible = childrenVisible tabText.Color = self._color_text
+        if clickFrame and self._IsMouseWithinBounds(tabPosition, tabSize) then self._active_tab = tabName end
         local totalSectionH_0 = self._padding local totalSectionH_1 = self._padding
         for sectionIndex, section in ipairs(tab['_sections']) do
             local sectionDraws = section['_drawings'] local sectionItems = section['_items']
+            for _, keybind in ipairs(sectionItems) do
+                local itemType = keybind['type'] local itemValue = keybind['value'] local itemCallback = keybind['callback']
+                if itemType == 'key' then
+                    if itemValue and itemValue ~= 'unbound' and itemCallback then
+                        local keyMode = keybind['mode'] local keyState = keybind['state']
+                        if keyMode == 'Hold' then keyState = self._inputs[itemValue]['held']
+                        elseif keyMode == 'Toggle' and self._inputs[itemValue]['click'] then keyState = not keyState
+                        elseif keyMode == 'Always' then keyState = true end
+                        if keyState ~= keybind['state'] then itemCallback(keyState) keybind['state'] = keyState end
+                    end
+                end
+            end
             if tabOpen then
                 local sectionY = self._padding * 2 local opposite = (sectionIndex+1) % 2
                 local sectionW = self.w / 2 - self._padding * 1.5
@@ -357,46 +468,74 @@ function UILib:Step()
                     local itemPosition = sectionPos + Vector2.new(10, sectionY)
                     if itemType == 'checkbox' then
                         local checkboxOutline = itemDraws[1] local checkboxCheck = itemDraws[2] local checkboxShadow = itemDraws[3] local checkboxLabel = itemDraws[4]
-                        local boxSize = Vector2.new(28, 14)
-                        local toggleHover = self._IsMouseWithinBounds(itemPosition, Vector2.new(sectionW - 20, boxSize.y))
-                        checkboxOutline.Position = itemPosition checkboxOutline.Size = boxSize checkboxOutline.Transparency = baseOpacity checkboxOutline.Visible = childrenVisible checkboxOutline.Color = itemValue and self._color_accent or (toggleHover and self._color_overlay or self._color_border)
-                        checkboxCheck.Position = itemPosition + Vector2.new(itemValue and 15 or 2, 2) checkboxCheck.Size = Vector2.new(11, 10) checkboxCheck.Transparency = baseOpacity checkboxCheck.Visible = childrenVisible checkboxCheck.Color = itemValue and self._color_accent or self._color_muted
-                        checkboxShadow.Position = itemPosition + Vector2.new(2, boxSize.y - 2) checkboxShadow.Size = Vector2.new(boxSize.x - 4, 1) checkboxShadow.Transparency = 0.18 * baseOpacity checkboxShadow.Visible = childrenVisible checkboxShadow.Color = BLACK
-                        checkboxLabel.Position = itemPosition + Vector2.new(boxSize.x + 9, 0) checkboxLabel.Transparency = baseOpacity checkboxLabel.Visible = childrenVisible checkboxLabel.Color = toggleHover and self._color_text or self._color_muted
-                        if toggleHover then if clickFrame then sectionItem['value'] = not sectionItem['value'] if itemCallback then itemCallback(sectionItem['value']) end end end
-                        sectionY = sectionY + boxSize.y + 10
+                        local boxSize = Vector2.new(14, 14)
+                        checkboxOutline.Position = itemPosition checkboxOutline.Size = boxSize checkboxOutline.Transparency = baseOpacity checkboxOutline.Visible = childrenVisible
+                        checkboxCheck.Position = itemPosition + Vector2.new(1, 1) checkboxCheck.Size = boxSize - Vector2.new(2, 2) checkboxCheck.Transparency = baseOpacity checkboxCheck.Visible = itemValue == true and childrenVisible checkboxCheck.Color = self._color_accent
+                        checkboxShadow.Position = itemPosition + Vector2.new(1, boxSize.y - 2) checkboxShadow.Size = Vector2.new(boxSize.x - 2, 1) checkboxShadow.Transparency = 0.3 * baseOpacity checkboxShadow.Visible = itemValue == true and childrenVisible checkboxShadow.Color = self._color_border
+                        checkboxLabel.Position = itemPosition + Vector2.new(boxSize.x + 8, 0) checkboxLabel.Transparency = baseOpacity checkboxLabel.Visible = childrenVisible checkboxLabel.Color = self._color_text
+                        if self._IsMouseWithinBounds(itemPosition, boxSize) then checkboxOutline.Color = self._color_accent if clickFrame then sectionItem['value'] = not sectionItem['value'] if itemCallback then itemCallback(sectionItem['value']) end end else checkboxOutline.Color = self._color_crust end
+                        sectionY = sectionY + boxSize.y + 8
                     elseif itemType == 'slider' then
                         local sliderOutline = itemDraws[1] local sliderFill = itemDraws[2] local sliderFillShadow = itemDraws[3] local sliderValue = itemDraws[4] local sliderLabel = itemDraws[5]
                         local min = sectionItem['min'] local max = sectionItem['max'] local step = sectionItem['step'] local appendix = sectionItem['appendix']
-                        local sliderW = sectionW - self._padding * 3 local sliderH = 18 local sliderBoxSize = Vector2.new(sliderW, sliderH)
+                        local sliderW = sectionW - self._padding * 3 local sliderH = 20 local sliderBoxSize = Vector2.new(sliderW, sliderH)
                         local _labelW, labelH = self._GetTextBounds('')
-                        local sliderHover = self._IsMouseWithinBounds(itemPosition + Vector2.new(0, labelH + 10), sliderBoxSize)
-                        sliderLabel.Position = itemPosition sliderLabel.Transparency = baseOpacity sliderLabel.Visible = childrenVisible sliderLabel.Color = sliderHover and self._color_text or self._color_muted
-                        sliderOutline.Position = itemPosition + Vector2.new(0, labelH + 16) sliderOutline.Size = Vector2.new(sliderW, 6) sliderOutline.Transparency = baseOpacity sliderOutline.Visible = childrenVisible sliderOutline.Color = self._color_border
+                        sliderLabel.Position = itemPosition sliderLabel.Transparency = baseOpacity sliderLabel.Visible = childrenVisible sliderLabel.Color = self._color_text
+                        sliderOutline.Position = itemPosition + Vector2.new(0, labelH + 10) sliderOutline.Size = sliderBoxSize sliderOutline.Transparency = baseOpacity sliderOutline.Visible = childrenVisible sliderOutline.Color = self._color_crust
                         local fillVisible = itemValue ~= min and childrenVisible
                         local fillPercent = (itemValue - (sectionItem.min or 0)) / ((sectionItem.max or 1) - (sectionItem.min or 0)) fillPercent = clamp(fillPercent, 0, 1)
-                        sliderFill.Position = itemPosition + Vector2.new(1, labelH + 17) sliderFill.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), 4) sliderFill.Transparency = baseOpacity sliderFill.Visible = fillVisible sliderFill.Color = self._color_accent
-                        sliderFillShadow.Position = itemPosition + Vector2.new(math.max(sliderW * fillPercent - 3, 1), labelH + 13) sliderFillShadow.Size = Vector2.new(4, 12) sliderFillShadow.Transparency = baseOpacity sliderFillShadow.Visible = childrenVisible sliderFillShadow.Color = self._color_text
+                        sliderFill.Position = itemPosition + Vector2.new(1, labelH + 11) sliderFill.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), sliderH - 2) sliderFill.Transparency = baseOpacity sliderFill.Visible = fillVisible sliderFill.Color = self._color_accent
+                        sliderFillShadow.Position = itemPosition + Vector2.new(1, labelH + sliderH + 7) sliderFillShadow.Size = Vector2.new(math.max(sliderW * fillPercent - 2, 0), 2) sliderFillShadow.Transparency = 0.15 * baseOpacity sliderFillShadow.Visible = fillVisible
                         local displayedValue = tostring(itemValue) .. (appendix or '') local sliderValueW, sliderValueH = self._GetTextBounds(displayedValue)
-                        sliderValue.Position = itemPosition + Vector2.new(sliderW - sliderValueW - 2, 0) sliderValue.Text = displayedValue sliderValue.Transparency = baseOpacity sliderValue.Visible = childrenVisible
-                        if sliderHover then sliderValue.Color = self._color_accent if m1Held then local mouseX = mousePos.x - itemPosition.x local percent = clamp(mouseX / sliderW, 0, 1) local newValue = min + (max - min) * percent newValue = math.floor((newValue / step) + 0.5) * step newValue = math.max(min, math.min(max, newValue)) if newValue ~= sectionItem['value'] then sectionItem['value'] = newValue if itemCallback then itemCallback(newValue) end end end else sliderValue.Color = self._color_text end
+                        sliderValue.Position = itemPosition + Vector2.new(sliderW - sliderValueW - 6, sliderValueH / 2 + sliderH - 2) sliderValue.Text = displayedValue sliderValue.Transparency = baseOpacity sliderValue.Visible = childrenVisible
+                        if self._IsMouseWithinBounds(itemPosition + Vector2.new(0, labelH + 10), sliderBoxSize) then sliderValue.Color = self._color_accent if m1Held then local mouseX = mousePos.x - itemPosition.x local percent = clamp(mouseX / sliderW, 0, 1) local newValue = min + (max - min) * percent newValue = math.floor((newValue / step) + 0.5) * step newValue = math.max(min, math.min(max, newValue)) if newValue ~= sectionItem['value'] then sectionItem['value'] = newValue if itemCallback then itemCallback(newValue) end end end else sliderValue.Color = self._color_text end
                         sectionY = sectionY + sliderH + 18 + labelH
+                    elseif itemType == 'choice' then
+                        local choiceOutline = itemDraws[1] local choiceFill = itemDraws[2] local choiceValues = itemDraws[3] local choiceExpand = itemDraws[4] local choiceLabel = itemDraws[5]
+                        local choices = sectionItem['choices'] local multi = sectionItem['multi']
+                        local _labelW, labelH = self._GetTextBounds('') local choiceW = sectionW - self._padding * 3 local choiceH = 20 local choiceBoxSize = Vector2.new(choiceW, choiceH) local choiceBoxPosition = itemPosition + Vector2.new(0, labelH + 10)
+                        choiceLabel.Position = itemPosition choiceLabel.Transparency = baseOpacity choiceLabel.Visible = childrenVisible choiceLabel.Color = self._color_text
+                        local valuesText = table.concat(itemValue, ', ') local valuesTextW, _valuesTextH = self._GetTextBounds(valuesText)
+                        choiceValues.Position = itemPosition + Vector2.new(4, labelH / 2 + choiceH - 2) choiceValues.Text = valuesTextW > choiceW - 32 and '...' or valuesText choiceValues.Transparency = baseOpacity choiceValues.Visible = childrenVisible choiceValues.Color = self._color_text
+                        choiceOutline.Position = choiceBoxPosition choiceOutline.Size = choiceBoxSize choiceOutline.Transparency = baseOpacity choiceOutline.Visible = childrenVisible
+                        choiceFill.Position = choiceBoxPosition + Vector2.new(2, 2) choiceFill.Size = choiceBoxSize - Vector2.new(4, 4) choiceFill.Transparency = baseOpacity choiceFill.Visible = childrenVisible choiceFill.Color = self._color_crust
+                        local expandSymbol = '<' local choiceExpandW, choiceExpandH = self._GetTextBounds(expandSymbol) choiceExpand.Position = itemPosition + Vector2.new(choiceW - choiceExpandW - 4, choiceExpandH / 2 + choiceH - 2) choiceExpand.Text = expandSymbol choiceExpand.Transparency = baseOpacity choiceExpand.Visible = childrenVisible choiceExpand.Color = self._color_text
+                        if self._IsMouseWithinBounds(choiceBoxPosition, choiceBoxSize) then choiceOutline.Color = self._color_accent if clickFrame then local dropdownCallback = function(newValues) sectionItem['value'] = newValues if itemCallback then itemCallback(sectionItem['value']) end end self:_SpawnDropdown(itemValue, choices, multi, dropdownCallback, choiceBoxPosition + Vector2.new(0, choiceH), choiceW) elseif ctxFrame then local dropdownCallback = function(_newValues) sectionItem['value'] = {} itemCallback(sectionItem['value']) end self:_SpawnDropdown({}, {'Clear'}, false, dropdownCallback, mousePos, 60) end else choiceOutline.Color = self._color_crust end
+                        sectionY = sectionY + choiceH + 18 + labelH
                     elseif itemType == 'button' then
                         local buttonOutline = itemDraws[1] local buttonFill = itemDraws[2] local buttonLabel = itemDraws[3]
-                        local buttonText = sectionItem['label'] local buttonTextW, buttonTextH = self._GetTextBounds(buttonText) local buttonBoxSize = Vector2.new(sectionW - 20, 22)
-                        local buttonHover = self._IsMouseWithinBounds(itemPosition, buttonBoxSize)
-                        buttonLabel.Position = itemPosition + Vector2.new(buttonBoxSize.x / 2 - buttonTextW / 2, 5) buttonLabel.Transparency = baseOpacity buttonLabel.Visible = childrenVisible buttonLabel.Color = buttonHover and self._color_text or self._color_muted
+                        local buttonText = sectionItem['label'] local buttonTextW, buttonTextH = self._GetTextBounds(buttonText) local buttonBoxSize = Vector2.new(buttonTextW + self._padding * 2, 20)
+                        buttonLabel.Position = itemPosition + Vector2.new(self._padding, 4) buttonLabel.Transparency = baseOpacity buttonLabel.Visible = childrenVisible buttonLabel.Color = self._color_text
                         buttonOutline.Position = itemPosition buttonOutline.Size = buttonBoxSize buttonOutline.Transparency = baseOpacity buttonOutline.Visible = childrenVisible
-                        buttonFill.Position = itemPosition + Vector2.new(2, 2) buttonFill.Size = buttonBoxSize - Vector2.new(4, 4) buttonFill.Transparency = baseOpacity buttonFill.Visible = childrenVisible buttonFill.Color = buttonHover and self._color_hover or self._color_surface_2
-                        if buttonHover then if clickFrame and itemCallback then itemCallback(sectionItem['value']) end buttonOutline.Color = self._color_accent else buttonOutline.Color = self._color_border end
+                        buttonFill.Position = itemPosition + Vector2.new(2, 2) buttonFill.Size = buttonBoxSize - Vector2.new(4, 4) buttonFill.Transparency = baseOpacity buttonFill.Visible = childrenVisible buttonFill.Color = self._color_crust
+                        if self._IsMouseWithinBounds(itemPosition, buttonBoxSize) then if clickFrame and itemCallback then itemCallback(sectionItem['value']) end buttonOutline.Color = self._color_accent else buttonOutline.Color = self._color_crust end
+                        sectionY = sectionY + 22 + buttonTextH
+                    elseif itemType == 'colorpicker' then
+                        local colorpickerOutline = itemDraws[1] local colorpickerFill = itemDraws[2] local colorpickerShadow = itemDraws[3] local colorpickerLabel = itemDraws[4]
+                        local boxSize = Vector2.new(30, 14) local boxPosition = itemPosition + Vector2.new(sectionW - boxSize.x - self._padding * 3, 0)
+                        colorpickerOutline.Position = boxPosition colorpickerOutline.Size = boxSize colorpickerOutline.Transparency = baseOpacity colorpickerOutline.Visible = childrenVisible colorpickerOutline.Color = self._color_crust
+                        colorpickerFill.Position = boxPosition + Vector2.new(1, 1) colorpickerFill.Size = boxSize - Vector2.new(2, 2) colorpickerFill.Transparency = baseOpacity colorpickerFill.Color = Color3.fromRGB(unpack(sectionItem['value'])) colorpickerFill.Visible = childrenVisible
+                        colorpickerShadow.Position = boxPosition + Vector2.new(4, 4) colorpickerShadow.Size = boxSize - Vector2.new(8, 8) colorpickerShadow.Transparency = baseOpacity * 0.25 colorpickerShadow.Visible = childrenVisible
+                        colorpickerLabel.Position = itemPosition colorpickerLabel.Transparency = baseOpacity colorpickerLabel.Visible = childrenVisible colorpickerLabel.Color = self._color_text
+                        if self._IsMouseWithinBounds(boxPosition, boxSize) then if clickFrame then local colorpickerCallback = function(newColor) sectionItem['value'] = newColor if itemCallback then itemCallback(Color3.fromRGB(unpack(sectionItem['value']))) end end self:_SpawnColorpicker(sectionItem['value'], sectionItem['label'], colorpickerCallback) elseif ctxFrame then self:_SpawnDropdown({}, {'Copy', 'Paste'}, false, function(values) local action = values[1] if action == 'Copy' then self._clipboard_color = itemValue elseif action == 'Paste' then sectionItem['value'] = self._clipboard_color or itemValue if itemCallback then itemCallback(Color3.fromRGB(unpack(sectionItem['value']))) end end end, mousePos, 60) end end
+                        sectionY = sectionY + boxSize.y + 10
+                    elseif itemType == 'key' then
+                        local keyLabel = itemDraws[1] local keyOutline = itemDraws[2] local keyFill = itemDraws[3] local keyText = itemDraws[4]
+                        local buttonText = sectionItem['_listening'] == true and '...' or itemValue:upper() local buttonTextW, buttonTextH = self._GetTextBounds(buttonText) local buttonBoxSize = Vector2.new(buttonTextW + self._padding * 2, 20) local buttonPosition = itemPosition + Vector2.new(sectionW - buttonBoxSize.x - self._padding * 3, 0)
+                        keyText.Position = buttonPosition + Vector2.new(self._padding, 4) keyText.Transparency = baseOpacity keyText.Text = buttonText keyText.Visible = childrenVisible keyText.Color = self._color_text
+                        keyOutline.Position = buttonPosition keyOutline.Size = buttonBoxSize keyOutline.Transparency = baseOpacity keyOutline.Visible = childrenVisible
+                        keyFill.Position = buttonPosition + Vector2.new(2, 2) keyFill.Size = buttonBoxSize - Vector2.new(4, 4) keyFill.Transparency = baseOpacity keyFill.Visible = childrenVisible keyFill.Color = self._color_crust
+                        keyLabel.Position = itemPosition + Vector2.new(0, buttonTextH / 2 + 1) keyLabel.Transparency = baseOpacity keyLabel.Visible = childrenVisible keyLabel.Color = self._color_text
+                        if self._IsMouseWithinBounds(buttonPosition, buttonBoxSize) then if clickFrame then sectionItem['_listening'] = true self._inputs['m1']['click'] = false end keyOutline.Color = self._color_accent else keyOutline.Color = self._color_crust end
+                        if sectionItem['_listening'] then for keycode, inputData in pairs(self._inputs) do if inputData['click'] then sectionItem['value'] = keycode sectionItem['_listening'] = false break end end end
                         sectionY = sectionY + 22 + buttonTextH
                     end
                 end
-                local sectionCrust = sectionDraws[2] local sectionBorder = sectionDraws[3] local sectionTitle = sectionDraws[4]
-                sectionCrust.Position = sectionPos sectionCrust.Size = Vector2.new(sectionW, sectionY) sectionCrust.Transparency = baseOpacity sectionCrust.Visible = childrenVisible sectionCrust.Color = self._color_surface_2
-                sectionBorder.Position = sectionPos + Vector2.new(1, 1) sectionBorder.Size = Vector2.new(sectionW - 2, sectionY - 2) sectionBorder.Transparency = baseOpacity sectionBorder.Visible = childrenVisible sectionBorder.Color = self._color_border
+                local sectionBackdrop = sectionDraws[1] local sectionCrust = sectionDraws[2] local sectionBorder = sectionDraws[3] local sectionTitle = sectionDraws[4]
+                sectionCrust.Position = sectionPos sectionCrust.Size = Vector2.new(sectionW, sectionY) sectionCrust.Transparency = baseOpacity sectionCrust.Visible = childrenVisible sectionCrust.Color = self._color_crust
+                sectionBorder.Position = sectionPos + Vector2.new(1, 1) sectionBorder.Size = Vector2.new(sectionW - 2, sectionY - 2) sectionBorder.Transparency = baseOpacity sectionBorder.Visible = childrenVisible sectionBorder.Color = self._color_overlay
                 local _sectionTitleW, sectionTitleH = self._GetTextBounds('') sectionTitle.Position = sectionPos + Vector2.new(10, - sectionTitleH / 2) sectionTitle.Transparency = baseOpacity sectionTitle.Visible = childrenVisible sectionTitle.Color = self._color_text
-                sectionDraws[1].Visible = false
+                sectionBackdrop.Visible = false
                 sectionY = sectionY + self._padding
                 if opposite == 1 then totalSectionH_0 = totalSectionH_0 + sectionY else totalSectionH_1 = totalSectionH_1 + sectionY end
             else undrawAll(sectionDraws) for _, sectionItem in ipairs(sectionItems) do undrawAll(sectionItem['_drawings']) end end
@@ -407,7 +546,7 @@ end
 
 function UILib:Destroy()
     for _, drawing in pairs(self._tree['_drawings']) do drawing:Remove() end
-    self:_RemoveDropdown()
+    self:_RemoveDropdown() self:_RemoveColorpicker()
     for _, tab in pairs(self._tree['_tabs']) do
         if tab['_drawings'] then for _, drawing in pairs(tab['_drawings']) do drawing:Remove() end end
         if tab._sections then for _, section in pairs(tab['_sections']) do for _, drawing in pairs(section['_drawings']) do drawing:Remove() end if section._items then for _, item in pairs(section._items) do for _, drawing in pairs(item['_drawings']) do drawing:Remove() end end end end end
@@ -415,760 +554,868 @@ function UILib:Destroy()
     self._tree = nil setrobloxinput(true)
 end
 
--- ===================================================================
---                         CONFIG
--- ===================================================================
+-- =====================
+-- CONFIG
+-- =====================
 local CONFIG = {
-    statMod = {
-        enabled = false,
-        lifesteal = 21,
-    },
-    hitbox = {
-        enabled = false,
-        size = 40,
-        markSize = 80,
-    },
-    damage = {
-        esp = false,
-        heavyForce = false,
-    },
-    parry = {
-        auto = false,
-        range = 25,
-        cooldown = 0.4,
-        disableFlash = false,
-        forceReflector = false,
-    },
-    health = {
-        autoHeal = false,
-        threshold = 30,
-        esp = false,
-    },
-    stamina = {
-        infinite = false,
-    },
+    autoQTE = { enabled = true, reactionDelay = 0, postPressDelay = 0.30, deviation = 0, repressInterval = 0.45, keyHold = 0.025 },
+    ratioQTE = { enabled = true, baseDelay = 0.60, minDelay = 0.40, healthFloor = 0.60 },
+    perfectSwap = { enabled = true, scanTimeout = 2.0 },
+    esp = { enabled = true, dummy = true, items = true, colorDummy = {255, 100, 100}, colorItems = {100, 255, 100}, updateRate = 60 },
+    domainVotes = { enabled = true },
+    autoBlackflashItadori = { enabled = false, timing = 0.285, usePingCompensation = false },
+    autoBlackflashMahito  = { enabled = false, timing = 0.285, usePingCompensation = false },
+    domainHealthESP = { enabled = true, nearbyThreshold = 40 },
+    autoPerfectBlock = { enabled = false, range = 12, cooldown = 0.5, reactDelay = 0.05, mode = "Predict", defaultCadence = 1.00, earlyBy = 0.12, holdTime = 0.15 },
+    autoCounter = { enabled = false, range = 12, cooldown = 1.0, reactDelay = 0.03, preferOverBlock = true },
+    threat = { includeDummy = true, reactToM2 = true },
 }
 
-local TARGET_NAMES = {"Head", "Main", "Storage", "KillBot", "Cannon", "killbot", "cannon"}
+-- =====================
+-- COUNTER MOVE TABLE (internal Moveset attribute names, confirmed via scanner)
+-- =====================
+-- Maps Moveset attribute value -> VK keycode of counter slot.
+-- Movesets not listed have no counter; Auto Counter no-ops on them.
+local COUNTER_MOVES = {
+    ["Itadori"] = 0x34, -- Vessel: 4 (Manji Kick)
+    ["Charles"] = 0x33, -- Aspiring Mangaka: 3
+    ["Hakari"]  = 0x52, -- Restless Gambler: R
+    ["Choso"]   = 0x33, -- Blood Manipulator: 3
+}
 
--- ===================================================================
---                     SERVICES & REFERENCES
--- ===================================================================
-local Players        = game:GetService("Players")
-local LocalPlayer    = Players.LocalPlayer
-local Workspace      = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService     = game:GetService("RunService")
-local Lighting       = game:GetService("Lighting")
-local Camera         = Workspace.CurrentCamera
+-- =====================
+-- INTERNAL STATE
+-- =====================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
--- ===================================================================
---                  INSTANCE FINDER UTILITY
--- ===================================================================
-local function FindInstance(name, className, parent)
-    parent = parent or ReplicatedStorage
-    local result = nil
-    pcall(function()
-        for _, v in ipairs(parent:GetDescendants()) do
-            if v.Name == name and (not className or v:IsA(className)) then
-                result = v
-                return
+local KEYS = { W = 0x57, A = 0x41, S = 0x53, D = 0x44, F = 0x46, R = 0x52, G = 0x47, THREE = 0x33, TWO = 0x32 }
+local VALID_QTE_KEYS = { ["W"] = KEYS.W, ["A"] = KEYS.A, ["S"] = KEYS.S, ["D"] = KEYS.D }
+local PERFECT_SWAP_MOVES = {"Swift Kick", "Brute Force", "Pebble Throw", "Elbow Drop"}
+local ULT_SWAP_MOVES = {"Idol's Debut", "Climax Jumping", "Dreams", "Brothers"}
+local QTEState = {detectedKey = "", detectedTime = 0, displayDuration = 1.0, lastLabelText = "", lastPressTime = 0}
+local RatioState = { rWasPressed = false, isScanning = false, scanStartTime = 0, trackedTarget = nil, trackedRatioValue = nil, qteDetectedTime = 0, hasTriggered = false, targetHealthPercent = 1.0, calculatedDelay = 0.60, lastTriggerTime = 0, triggerCooldown = 0.3 }
+local SwapState = { rWasPressed = false, isScanning = false, scanStartTime = 0, swapConfirmed = false, effectsSnapshot = {}, hasTriggeredM1 = false }
+local ESPState = {objects = {}, lastDiscovery = 0}
+local DomainState = { isActive = false, trackedDomain = nil, gWasPressed = false, waitingForChooseUI = false, waitStartTime = 0, confessCount = 0, silenceCount = 0, denialCount = 0, confessDrawing = nil, silenceDrawing = nil, denialDrawing = nil }
+local currentPing = 0
+local BlackflashItadoriState = { waiting = false, nextPressTime = 0, wasDown = false }
+local BlackflashMahitoState  = { waiting = false, nextPressTime = 0, wasDown = false }
+local DomainHealthESPState = { drawings = {} }
+local PerfectBlockState = { lastTriggerTime = 0, lastDetectionTime = 0, lastCadence = 0 }
+local CounterState = { lastTriggerTime = 0, lastDetectionTime = 0 }
+
+-- =====================
+-- UTILITY FUNCTIONS
+-- =====================
+local function GetTime() return os.clock() end
+
+local function SafeFind(parent, ...)
+    if not parent then return nil end
+    for _, name in ipairs({...}) do parent = parent:FindFirstChild(name) if not parent then return nil end end
+    return parent
+end
+
+local function GetWorkspaceCharacter()
+    local characters = game.Workspace:FindFirstChild("Characters")
+    return characters and characters:FindFirstChild(LocalPlayer.Name)
+end
+
+local function GetPlayerPosition()
+    local char = GetWorkspaceCharacter()
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    return hrp and hrp.Position
+end
+
+local function CalculateDistance(pos1, pos2)
+    if not pos1 or not pos2 then return 0 end
+    local dx, dy, dz = pos2.X - pos1.X, pos2.Y - pos1.Y, pos2.Z - pos1.Z
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
+end
+
+local function GetMovesetAttr()
+    local char = GetWorkspaceCharacter()
+    return char and char:GetAttribute("Moveset")
+end
+
+local function HasMoveset(name) return GetMovesetAttr() == name end
+
+local function HasMovesetMoves(moves)
+    local char = GetWorkspaceCharacter()
+    if not char then return false end
+    local moveset = char:FindFirstChild("Moveset")
+    if not moveset then return false end
+    for _, move in ipairs(moves) do if moveset:FindFirstChild(move) then return true end end
+    return false
+end
+
+local function GetPing()
+    local ok, v = pcall(function()
+        return game:GetService("Stats"):FindFirstChild("Network")
+            :FindFirstChild("ServerStatsItem"):FindFirstChild("Data Ping").Value
+    end)
+    return (ok and tonumber(v)) or 0
+end
+
+local function HasBlackflashMove()
+    return HasMovesetMoves({"Focus Strike", "Divergent Fist"})
+end
+
+-- =====================
+-- AUTO QTE (Defense Attorney / Higuruma)
+-- =====================
+local function GetQTELabel() return SafeFind(LocalPlayer, "PlayerGui", "QTE", "QTE_PC") end
+
+local function ProcessQTE()
+    if not CONFIG.autoQTE.enabled or iskeypressed(KEYS.F) then
+        QTEState.lastLabelText = ""
+        return false
+    end
+    local label = GetQTELabel()
+    if not label or not label.Text or label.Text == "" then
+        QTEState.lastLabelText = ""
+        return false
+    end
+
+    local labelText = label.Text:upper()
+    local keyCode = VALID_QTE_KEYS[labelText]
+    if not keyCode then
+        QTEState.lastLabelText = labelText
+        return false
+    end
+
+    local now = GetTime()
+    local isNewLetter = labelText ~= QTEState.lastLabelText
+    -- Same-letter re-rolls produce NO Text property change, so a fresh prompt
+    -- is indistinguishable from one we already answered. If the text has sat
+    -- unchanged past the re-press window, press again.
+    local repressDue = (now - QTEState.lastPressTime) >= CONFIG.autoQTE.repressInterval
+    if not isNewLetter and not repressDue then return false end
+
+    QTEState.detectedKey = labelText
+    QTEState.detectedTime = now
+
+    -- Pre-press reaction delay (humanizing / tuning)
+    local reaction = CONFIG.autoQTE.reactionDelay
+    if reaction > 0 then
+        task.wait(reaction)
+        -- Re-verify label hasn't changed during the wait
+        local recheck = GetQTELabel()
+        if not recheck or not recheck.Text or recheck.Text:upper() ~= labelText then
+            return false
+        end
+    end
+
+    keypress(keyCode)
+    task.wait(CONFIG.autoQTE.keyHold)
+    keyrelease(keyCode)
+    QTEState.lastLabelText = labelText
+    QTEState.lastPressTime = GetTime()
+    return true
+end
+
+-- =====================
+-- RATIO QTE (Salaryman / Nanami)
+-- =====================
+local function HasSalarymanMoveset()
+    return HasMoveset("Salaryman") or HasMoveset("Nanami")
+end
+
+local function FindOurRatioQTE()
+    local characters = game.Workspace:FindFirstChild("Characters")
+    if not characters then return nil, nil end
+    local myName = LocalPlayer.Name
+    for _, character in ipairs(characters:GetChildren()) do
+        local ratio = SafeFind(character, "Info", "Ratio")
+        if ratio then
+            local owner = ratio:FindFirstChild("Owner")
+            if owner and owner.Value then
+                local ownerName = pcall(function() return owner.Value.Name end) and owner.Value.Name
+                if ownerName == myName then return character, ratio end
             end
         end
-    end)
-    if not result then
-        pcall(function()
-            for _, v in ipairs(Workspace:GetDescendants()) do
-                if v.Name == name and (not className or v:IsA(className)) then
-                    result = v
+    end
+    return nil, nil
+end
+
+local function GetTargetHealthPercent(target)
+    if not target then return 1.0 end
+    local humanoid = target:FindFirstChild("Humanoid")
+    if humanoid and humanoid.MaxHealth > 0 then return humanoid.Health / humanoid.MaxHealth end
+    return 1.0
+end
+
+local function CalculatePressDelay(healthPercent)
+    local cfg = CONFIG.ratioQTE
+    local effective = math.max(healthPercent, cfg.healthFloor)
+    local normalized = math.max(0, math.min(1, (effective - cfg.healthFloor) / (1.0 - cfg.healthFloor)))
+    return cfg.minDelay + (cfg.baseDelay - cfg.minDelay) * normalized
+end
+
+local function ProcessRatioQTE()
+    if not CONFIG.ratioQTE.enabled or not HasSalarymanMoveset() then return end
+    local currentTime = GetTime()
+    local rPressed = iskeypressed(KEYS.R)
+    if rPressed and not RatioState.rWasPressed then RatioState.isScanning = true RatioState.scanStartTime = currentTime RatioState.trackedTarget = nil RatioState.trackedRatioValue = nil RatioState.hasTriggered = false end
+    RatioState.rWasPressed = rPressed
+    if not RatioState.isScanning and not RatioState.trackedRatioValue then return end
+    if RatioState.isScanning then
+        if currentTime - RatioState.scanStartTime > 2.0 then RatioState.isScanning = false return end
+        local target, ratioValue = FindOurRatioQTE()
+        if target and ratioValue then RatioState.isScanning = false RatioState.trackedTarget = target RatioState.trackedRatioValue = ratioValue RatioState.qteDetectedTime = currentTime RatioState.hasTriggered = false RatioState.targetHealthPercent = GetTargetHealthPercent(target) RatioState.calculatedDelay = CalculatePressDelay(RatioState.targetHealthPercent) end
+        return
+    end
+    if RatioState.trackedRatioValue then
+        if not RatioState.trackedRatioValue.Parent or RatioState.trackedRatioValue:GetAttribute("Activated") == false then RatioState.trackedTarget = nil RatioState.trackedRatioValue = nil RatioState.hasTriggered = false return end
+        if RatioState.hasTriggered or currentTime - RatioState.lastTriggerTime < RatioState.triggerCooldown then return end
+        if currentTime - RatioState.qteDetectedTime >= RatioState.calculatedDelay then keypress(KEYS.R) keyrelease(KEYS.R) RatioState.hasTriggered = true RatioState.lastTriggerTime = currentTime end
+    end
+end
+
+-- =====================
+-- PERFECT SWAP (Switcher / Todo)
+-- =====================
+local function HasPerfectSwapMoveset()
+    local attr = GetMovesetAttr()
+    if attr == "Switcher" or attr == "Todo" then return true end
+    return HasMovesetMoves(PERFECT_SWAP_MOVES) or HasMovesetMoves(ULT_SWAP_MOVES)
+end
+
+local function HasClapTarget()
+    local info = SafeFind(GetWorkspaceCharacter(), "Info")
+    return info and info:FindFirstChild("ClapTarget") ~= nil
+end
+
+local function HasNoM1Flag()
+    local char = GetWorkspaceCharacter()
+    return char and char:FindFirstChild("NoM1") ~= nil
+end
+
+local function ResetSwapState()
+    SwapState.isScanning = false
+    SwapState.swapConfirmed = false
+    SwapState.effectsSnapshot = {}
+    SwapState.hasTriggeredM1 = false
+end
+
+local function ProcessPerfectSwap()
+    if not CONFIG.perfectSwap.enabled or not HasPerfectSwapMoveset() then return end
+    local currentTime = GetTime()
+    local rPressed = iskeypressed(KEYS.R)
+
+    if rPressed and not SwapState.rWasPressed then
+        SwapState.isScanning = true
+        SwapState.scanStartTime = currentTime
+        SwapState.swapConfirmed = false
+        SwapState.hasTriggeredM1 = false
+        SwapState.effectsSnapshot = {}
+    end
+
+    SwapState.rWasPressed = rPressed
+
+    if not SwapState.isScanning then return end
+
+    if currentTime - SwapState.scanStartTime > CONFIG.perfectSwap.scanTimeout then
+        ResetSwapState()
+        return
+    end
+
+    if not SwapState.swapConfirmed then
+        if HasClapTarget() then
+            SwapState.swapConfirmed = true
+            local effectsFolder = game.Workspace:FindFirstChild("Effects")
+            if effectsFolder then
+                for _, desc in ipairs(effectsFolder:GetDescendants()) do
+                    SwapState.effectsSnapshot[desc.Address] = true
+                end
+            end
+        end
+        return
+    end
+
+    local effectsFolder = game.Workspace:FindFirstChild("Effects")
+    if effectsFolder then
+        for _, desc in ipairs(effectsFolder:GetDescendants()) do
+            if not SwapState.effectsSnapshot[desc.Address] then
+                if desc.ClassName == "MeshPart" and desc.Name == "Clap" then
+                    if not SwapState.hasTriggeredM1 and not HasNoM1Flag() then
+                        mouse1press()
+                        mouse1release()
+                        SwapState.hasTriggeredM1 = true
+                    end
+                    ResetSwapState()
                     return
                 end
+                SwapState.effectsSnapshot[desc.Address] = true
             end
-        end)
-    end
-    return result
-end
-
--- ===================================================================
---               CACHED REMOTES & MODULES (loaded once)
--- ===================================================================
-local Remotes = {}
-pcall(function()
-    Remotes.RefillStamina   = FindInstance("RefillStamina",   "RemoteEvent")
-    Remotes.Parry           = FindInstance("Parry",           "RemoteEvent")
-    Remotes.PlayerDamage    = FindInstance("PlayerDamage",    "RemoteEvent")
-    Remotes.DamageIndicator = FindInstance("DamageIndicator", "RemoteEvent")
-    Remotes.AllyDamage      = FindInstance("AllyDamage",      "RemoteEvent")
-end)
-
-local Modules = {}
-pcall(function()
-    local healMod = FindInstance("heal", "ModuleScript")
-    if healMod then pcall(function() Modules.Heal = require(healMod) end) end
-    local getDmg = FindInstance("GetDamage", "ModuleScript")
-    if getDmg then pcall(function() Modules.GetDamage = require(getDmg) end) end
-end)
-
--- ===================================================================
---                ORIGINAL-STATE TRACKING (existing)
--- ===================================================================
-local originalSizes      = {}
-local originalAttributes = setmetatable({}, {__mode = "k"})
-local statTrackedInstances = setmetatable({}, {__mode = "k"})
-local STAT_TOOL_ATTRIBUTES = {"Lifesteal"}
-
-local function RememberAttributes(instance, names)
-    if not instance then return end
-    local snapshot = originalAttributes[instance]
-    if not snapshot then snapshot = {} originalAttributes[instance] = snapshot end
-    for _, name in ipairs(names) do
-        if snapshot[name] == nil then snapshot[name] = { value = instance:GetAttribute(name) } end
-    end
-end
-
-local function RestoreAttributes(instance, names)
-    local snapshot = instance and originalAttributes[instance]
-    if not snapshot then return end
-    pcall(function()
-        for _, name in ipairs(names) do
-            local saved = snapshot[name]
-            if saved ~= nil then instance:SetAttribute(name, saved.value) end
         end
+    end
+end
+
+-- =====================
+-- AUTO BLACKFLASH (Itadori)
+-- =====================
+local function ProcessAutoBlackflashItadori()
+    if not CONFIG.autoBlackflashItadori.enabled then return end
+    if GetMovesetAttr() ~= "Itadori" or not HasBlackflashMove() then return end
+
+    local keyDown = iskeypressed(KEYS.THREE)
+
+    if keyDown and not BlackflashItadoriState.wasDown and not BlackflashItadoriState.waiting then
+        local timingSec = CONFIG.autoBlackflashItadori.timing
+        if CONFIG.autoBlackflashItadori.usePingCompensation then
+            timingSec = timingSec - (currentPing / 1000)
+        end
+        BlackflashItadoriState.nextPressTime = os.clock() + math.max(0, timingSec)
+        BlackflashItadoriState.waiting = true
+    end
+
+    if BlackflashItadoriState.waiting and os.clock() >= BlackflashItadoriState.nextPressTime then
+        keypress(KEYS.THREE)
+        keyrelease(KEYS.THREE)
+        BlackflashItadoriState.waiting = false
+    end
+
+    BlackflashItadoriState.wasDown = keyDown
+end
+
+-- =====================
+-- AUTO BLACKFLASH (Mahito)
+-- =====================
+local function ProcessAutoBlackflashMahito()
+    if not CONFIG.autoBlackflashMahito.enabled then return end
+    if GetMovesetAttr() ~= "Mahito" or not HasBlackflashMove() then return end
+
+    local keyDown = iskeypressed(KEYS.THREE)
+
+    if keyDown and not BlackflashMahitoState.wasDown and not BlackflashMahitoState.waiting then
+        local timingSec = CONFIG.autoBlackflashMahito.timing
+        if CONFIG.autoBlackflashMahito.usePingCompensation then
+            timingSec = timingSec - (currentPing / 1000)
+        end
+        BlackflashMahitoState.nextPressTime = os.clock() + math.max(0, timingSec)
+        BlackflashMahitoState.waiting = true
+    end
+
+    if BlackflashMahitoState.waiting and os.clock() >= BlackflashMahitoState.nextPressTime then
+        keypress(KEYS.THREE)
+        keyrelease(KEYS.THREE)
+        BlackflashMahitoState.waiting = false
+    end
+
+    BlackflashMahitoState.wasDown = keyDown
+end
+
+-- =====================
+-- THREAT DETECTION (attribute-based)
+-- =====================
+-- Animation tracks are unreadable on this executor, so detection reads the
+-- replicated combat attributes instead: LastM1/LastM2 are server timestamps
+-- that update the moment a hit lands, CurrentM1 is the combo index (1-5).
+-- M1 cadence differs per character, so it's measured live per attacker from
+-- the deltas between LastM1 changes and used for Predict-mode timing.
+
+local ThreatMonitor = { tracked = {} } -- addr -> { lastM1, lastM2, m1ChangeAt, cadence }
+local PendingBlock = { pressAt = nil }
+local PendingCounter = { pressAt = nil, key = nil }
+
+local CADENCE_MIN = 0.40
+local CADENCE_MAX = 1.60
+
+local function TapKey(key, hold)
+    spawn(function()
+        keypress(key)
+        task.wait(hold or 0.03)
+        keyrelease(key)
     end)
 end
 
-local function TrackStatInstance(instance, names)
-    RememberAttributes(instance, names)
-    statTrackedInstances[instance] = names
+local function CharIncapacitated(char)
+    if not char then return true end
+    local rag = char:GetAttribute("Ragdoll")
+    if rag and rag ~= 0 then return true end
+    if char:GetAttribute("Stun") then return true end
+    if char:GetAttribute("Dead") then return true end
+    return false
 end
 
-local function RestoreTrackedAttributes(tracked)
-    for instance, names in pairs(tracked) do RestoreAttributes(instance, names) end
-    table.clear(tracked)
+local function LocalIncapacitated()
+    return CharIncapacitated(GetWorkspaceCharacter())
 end
 
--- ===================================================================
---               STAT MODIFIER  (existing feature)
--- ===================================================================
-local function ApplyStatMod()
-    local character = LocalPlayer.Character
-    if not character then return end
-    local tool = character:FindFirstChildOfClass("Tool")
-    if tool then
-        TrackStatInstance(tool, STAT_TOOL_ATTRIBUTES)
-        pcall(function() tool:SetAttribute("Lifesteal", CONFIG.statMod.lifesteal) end)
+local function OnAttackEvent(char, entry, dist, kind, comboIndex)
+    local now = GetTime()
+    if LocalIncapacitated() then return end
+
+    local moveset = GetMovesetAttr()
+    local counterKey = moveset and COUNTER_MOVES[moveset]
+    local counterReady = CONFIG.autoCounter.enabled and counterKey ~= nil
+        and (now - CounterState.lastTriggerTime) >= CONFIG.autoCounter.cooldown
+        and dist <= CONFIG.autoCounter.range
+    local blockReady = CONFIG.autoPerfectBlock.enabled
+        and (now - PerfectBlockState.lastTriggerTime) >= CONFIG.autoPerfectBlock.cooldown
+        and dist <= CONFIG.autoPerfectBlock.range
+
+    if counterReady and (CONFIG.autoCounter.preferOverBlock or not blockReady) then
+        PendingCounter.pressAt = now + CONFIG.autoCounter.reactDelay
+        PendingCounter.key = counterKey
+        CounterState.lastDetectionTime = now
+        return
     end
-end
-local function RestoreStatMod() RestoreTrackedAttributes(statTrackedInstances) end
 
--- ===================================================================
---              HITBOX EXPANDER  (existing feature)
--- ===================================================================
-local function ApplyHitbox()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return end
-    local cfg = CONFIG.hitbox
-    for _, enemy in ipairs(enemies:GetChildren()) do
-        local enemyName = tostring(enemy.Name)
-        for _, name in ipairs(TARGET_NAMES) do
-            local part = enemy:FindFirstChild(name)
-            if part then
-                if not originalSizes[part] then originalSizes[part] = part.Size end
-                pcall(function()
-                    part.CanCollide = false
-                    if name == "Head" and enemyName == "Mark" then
-                        part.Size = Vector3.new(cfg.markSize, cfg.markSize, cfg.markSize)
-                    else
-                        part.Size = Vector3.new(cfg.size, cfg.size, cfg.size)
-                    end
-                end)
+    if blockReady then
+        PerfectBlockState.lastDetectionTime = now
+        if CONFIG.autoPerfectBlock.mode == "Instant" then
+            -- Block goes up right after this hit; eats hit 1, covers the chain.
+            PendingBlock.pressAt = now + CONFIG.autoPerfectBlock.reactDelay
+        else
+            -- Predict: time the tap at the NEXT hit in the chain using the
+            -- cadence measured for THIS attacker, minus the early margin.
+            if kind == "M1" and comboIndex and comboIndex < 5 then
+                local cadence = entry.cadence or CONFIG.autoPerfectBlock.defaultCadence
+                PerfectBlockState.lastCadence = cadence
+                PendingBlock.pressAt = now + math.max(0.05, cadence - CONFIG.autoPerfectBlock.earlyBy)
+            else
+                -- End of a chain or an M2: no next M1 to predict, block now.
+                PendingBlock.pressAt = now + CONFIG.autoPerfectBlock.reactDelay
             end
         end
     end
 end
 
-local function RestoreHitbox()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if enemies then
-        for _, enemy in ipairs(enemies:GetChildren()) do
-            for _, name in ipairs(TARGET_NAMES) do
-                local part = enemy:FindFirstChild(name)
-                if part then
-                    local old = originalSizes[part]
-                    pcall(function()
-                        part.Size = old or Vector3.new(2, 2, 1)
-                        part.CanCollide = true
-                    end)
-                end
-            end
-        end
-    end
-    table.clear(originalSizes)
-end
-
--- ===================================================================
---                HEAVY DAMAGE FORCE  (new)
--- Force the held tool to flag attacks as heavy/critical.
--- Works if the game reads DamageType / HeavyDamage attributes
--- from the tool (common in attribute-driven combat systems).
--- ===================================================================
-local HEAVY_ATTRS = {"DamageType", "HeavyDamage", "CriticalHit", "AttackType"}
-local heavyTracked = setmetatable({}, {__mode = "k"})
-
-local function ApplyHeavyDamage()
-    local character = LocalPlayer.Character
-    if not character then return end
-    local tool = character:FindFirstChildOfClass("Tool")
-    if not tool then return end
-    RememberAttributes(tool, HEAVY_ATTRS)
-    heavyTracked[tool] = HEAVY_ATTRS
-    pcall(function()
-        tool:SetAttribute("DamageType",  "Heavy")
-        tool:SetAttribute("HeavyDamage", true)
-        tool:SetAttribute("CriticalHit", true)
-        tool:SetAttribute("AttackType",  "Heavy")
-    end)
-end
-
-local function RestoreHeavyDamage()
-    for inst, names in pairs(heavyTracked) do RestoreAttributes(inst, names) end
-    table.clear(heavyTracked)
-end
-
--- ===================================================================
---              INFINITE STAMINA  (new)
--- Fires the RefillStamina RemoteEvent every cycle.
--- ===================================================================
-local function ApplyInfiniteStamina()
-    if Remotes.RefillStamina then
-        pcall(function() Remotes.RefillStamina:FireServer() end)
-    end
-end
-
--- ===================================================================
---                  AUTO HEAL  (new)
--- Fires the heal module or searches for a heal mechanism
--- when the player's health drops below threshold.
--- ===================================================================
-local function GetPlayerHealth()
-    local character = LocalPlayer.Character
-    if not character then return 100, 100 end
-    local hum = character:FindFirstChildOfClass("Humanoid")
-    if not hum then return 100, 100 end
-    return hum.Health, hum.MaxHealth
-end
-
-local function ApplyAutoHeal()
-    local hp, maxHp = GetPlayerHealth()
-    local threshold = (CONFIG.health.threshold / 100) * maxHp
-    if hp >= threshold then return end
-
-    -- Strategy 1: call the required heal module
-    if Modules.Heal then
-        pcall(function()
-            if type(Modules.Heal) == "function" then
-                Modules.Heal(LocalPlayer)
-            elseif type(Modules.Heal) == "table" then
-                local fn = Modules.Heal.heal or Modules.Heal.Heal
-                    or Modules.Heal.activate or Modules.Heal.Use
-                if fn then fn(LocalPlayer) end
-            end
-        end)
+local function ProcessThreats()
+    if not CONFIG.autoPerfectBlock.enabled and not CONFIG.autoCounter.enabled then
+        ThreatMonitor.tracked = {}
+        PendingBlock.pressAt = nil
+        PendingCounter.pressAt = nil
+        return
     end
 
-    -- Strategy 2: look for a heal remote (name variations)
-    local healNames = {"Heal", "heal", "UseHeal", "HealPlayer", "RequestHeal"}
-    for _, n in ipairs(healNames) do
-        local remote = FindInstance(n, "RemoteEvent")
-        if remote then
-            pcall(function() remote:FireServer() end)
-            break
-        end
-    end
-end
-
--- ===================================================================
---                    AUTO PARRY  (new)
--- Detects nearby enemy attack animations and fires the Parry
--- remote with a configurable cooldown.
--- ===================================================================
-local ATTACK_KEYWORDS = {
-    "attack", "swing", "slash", "hit", "punch", "kick",
-    "smash", "strike", "combo", "heavy", "lunge", "thrust",
-    "chop", "cleave", "slam", "stab",
-}
-
-local function IsEnemyAttacking(enemy)
-    local ok, result = pcall(function()
-        local hum = enemy:FindFirstChildOfClass("Humanoid")
-        if not hum then return false end
-        local animator = hum:FindFirstChildOfClass("Animator")
-        if not animator then return false end
-        local tracks = animator:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do
-            local lname = string.lower(track.Name or "")
-            for _, kw in ipairs(ATTACK_KEYWORDS) do
-                if string.find(lname, kw) then return true end
-            end
-            -- Also trigger on Action-priority animations (likely attacks)
-            if track.Priority == Enum.AnimationPriority.Action
-            or track.Priority == Enum.AnimationPriority.Action2
-            or track.Priority == Enum.AnimationPriority.Action3
-            or track.Priority == Enum.AnimationPriority.Action4 then
-                -- But skip idle/walk/run animations
-                if not string.find(lname, "idle")
-                and not string.find(lname, "walk")
-                and not string.find(lname, "run")
-                and not string.find(lname, "jump") then
-                    return true
-                end
-            end
-        end
-        return false
-    end)
-    return ok and result or false
-end
-
-local lastParryTime = 0
-
-local function ApplyAutoParry()
-    if not Remotes.Parry then return end
-    if os.clock() - lastParryTime < CONFIG.parry.cooldown then return end
-
-    local character = LocalPlayer.Character
-    if not character then return end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return end
-
-    for _, enemy in ipairs(enemies:GetChildren()) do
-        local hum = enemy:FindFirstChildOfClass("Humanoid")
-        if hum and hum.Health > 0 then
-            local eRoot = enemy:FindFirstChild("HumanoidRootPart")
-                or enemy:FindFirstChild("Main")
-                or enemy:FindFirstChild("Head")
-            if eRoot then
-                local dist = (rootPart.Position - eRoot.Position).Magnitude
-                if dist <= CONFIG.parry.range then
-                    if IsEnemyAttacking(enemy) then
-                        pcall(function()
-                            if CONFIG.parry.forceReflector then
-                                Remotes.Parry:FireServer("Reflector")
-                            else
-                                Remotes.Parry:FireServer()
+    local myPos = GetPlayerPosition()
+    local characters = game.Workspace:FindFirstChild("Characters")
+    if myPos and characters then
+        -- Watch a little beyond trigger range so cadence is already measured
+        -- by the time an attacker closes in.
+        local maxRange = math.max(CONFIG.autoPerfectBlock.range, CONFIG.autoCounter.range) + 15
+        local seen = {}
+        for _, char in ipairs(characters:GetChildren()) do
+            local isDummy = char.Name == "Dummy"
+            if char.Name ~= LocalPlayer.Name and (CONFIG.threat.includeDummy or not isDummy) then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = CalculateDistance(myPos, hrp.Position)
+                    if dist <= maxRange then
+                        local addr = char.Address
+                        seen[addr] = true
+                        local m1 = char:GetAttribute("LastM1") or 0
+                        local m2 = char:GetAttribute("LastM2") or 0
+                        local entry = ThreatMonitor.tracked[addr]
+                        if entry then
+                            local now = GetTime()
+                            if m1 ~= entry.lastM1 then
+                                -- Update this attacker's measured M1 cadence
+                                -- from the local-clock delta between changes.
+                                if entry.m1ChangeAt then
+                                    local delta = now - entry.m1ChangeAt
+                                    if delta >= CADENCE_MIN and delta <= CADENCE_MAX then
+                                        if entry.cadence then
+                                            entry.cadence = entry.cadence * 0.5 + delta * 0.5
+                                        else
+                                            entry.cadence = delta
+                                        end
+                                    end
+                                end
+                                entry.m1ChangeAt = now
+                                if not CharIncapacitated(char) then
+                                    OnAttackEvent(char, entry, dist, "M1", char:GetAttribute("CurrentM1"))
+                                end
+                            elseif CONFIG.threat.reactToM2 and m2 ~= entry.lastM2 then
+                                if not CharIncapacitated(char) then
+                                    OnAttackEvent(char, entry, dist, "M2", nil)
+                                end
                             end
-                        end)
-                        lastParryTime = os.clock()
-                        return -- one parry per cycle
+                            entry.lastM1 = m1
+                            entry.lastM2 = m2
+                        else
+                            -- Seed without firing: dummies respawn as brand-new
+                            -- instances and their initial LastM1 must not trigger.
+                            ThreatMonitor.tracked[addr] = { lastM1 = m1, lastM2 = m2, m1ChangeAt = nil, cadence = nil }
+                        end
                     end
                 end
             end
+        end
+        for addr in pairs(ThreatMonitor.tracked) do
+            if not seen[addr] then ThreatMonitor.tracked[addr] = nil end
+        end
+    end
+
+    local now = GetTime()
+    if PendingCounter.pressAt and now >= PendingCounter.pressAt then
+        PendingCounter.pressAt = nil
+        if PendingCounter.key and not LocalIncapacitated() and not iskeypressed(PendingCounter.key) then
+            TapKey(PendingCounter.key, 0.05)
+            CounterState.lastTriggerTime = now
+        end
+    end
+    if PendingBlock.pressAt and now >= PendingBlock.pressAt then
+        PendingBlock.pressAt = nil
+        if not LocalIncapacitated() and not iskeypressed(KEYS.F) then
+            TapKey(KEYS.F, CONFIG.autoPerfectBlock.holdTime)
+            PerfectBlockState.lastTriggerTime = now
         end
     end
 end
 
--- ===================================================================
---             PARRY FLASH DISABLER  (new)
--- Clamps ColorCorrectionEffect brightness in Lighting so
--- screen-flash effects are suppressed without breaking normal light.
--- ===================================================================
-local savedFlashStates = {}
-
-local function ApplyParryFlashDisable()
-    pcall(function()
-        for _, v in ipairs(Lighting:GetChildren()) do
-            if v:IsA("ColorCorrectionEffect") then
-                if not savedFlashStates[v] then
-                    savedFlashStates[v] = { brightness = v.Brightness, tint = v.TintColor, contrast = v.Contrast }
-                end
-                if v.Brightness > 0.15 then v.Brightness = 0.15 end
-            end
-        end
-        -- Also suppress flash inside the player's PlayerGui
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            for _, ui in ipairs(pg:GetDescendants()) do
-                if ui:IsA("Frame") and (string.find(string.lower(ui.Name), "flash") or string.find(string.lower(ui.Name), "white")) then
-                    if ui.BackgroundTransparency < 0.8 then
-                        ui.BackgroundTransparency = 1
-                    end
-                end
-            end
-        end
-    end)
+-- =====================
+-- ESP
+-- =====================
+local function CreateESPDrawing(name, color)
+    local drawing = Drawing.new("Text") drawing.Font = Drawing.Fonts.System drawing.Text = name drawing.Color = Color3.fromRGB(color[1], color[2], color[3]) drawing.Outline = true drawing.Center = true drawing.Visible = false
+    return drawing
 end
 
-local function RestoreParryFlash()
-    pcall(function()
-        for inst, state in pairs(savedFlashStates) do
-            if inst and inst.Parent then
-                inst.Brightness = state.brightness
-                inst.TintColor  = state.tint
-                inst.Contrast   = state.contrast
-            end
+local function RemoveESPDrawing(espObj) if espObj and espObj.drawing then espObj.drawing:Remove() end end
+local function ClearAllESP() for _, espObj in pairs(ESPState.objects) do RemoveESPDrawing(espObj) end ESPState.objects = {} end
+
+local function UpdateESPPositions()
+    if not CONFIG.esp.enabled then for _, espObj in pairs(ESPState.objects) do if espObj.drawing then espObj.drawing.Visible = false end end return end
+    for _, espObj in pairs(ESPState.objects) do
+        if espObj.drawing then
+            local isEnabled = (espObj.type == "dummy" and CONFIG.esp.dummy) or (espObj.type == "item" and CONFIG.esp.items)
+            if not isEnabled then espObj.drawing.Visible = false
+            elseif espObj.part and espObj.part.Parent then
+                local screenPos, onScreen = WorldToScreen(espObj.part.Position)
+                espObj.drawing.Visible = onScreen
+                if onScreen then espObj.drawing.Position = screenPos local color = espObj.type == "dummy" and CONFIG.esp.colorDummy or CONFIG.esp.colorItems espObj.drawing.Color = Color3.fromRGB(color[1], color[2], color[3]) end
+            else espObj.drawing.Visible = false end
         end
-    end)
-    table.clear(savedFlashStates)
+    end
 end
 
--- ===================================================================
---                      ESP SYSTEM  (new)
--- Drawing-based health bars + floating damage numbers over enemies.
--- ===================================================================
-local ESP_POOL_SIZE = 25
-local espPool = {}
-local allESPDrawings = {}
+local function DiscoverDummy()
+    local dummyKey = "dummy_character"
+    if ESPState.objects[dummyKey] then local espObj = ESPState.objects[dummyKey] if not espObj.part or not espObj.part.Parent then RemoveESPDrawing(espObj) ESPState.objects[dummyKey] = nil else return end end
+    local dummy = SafeFind(game.Workspace, "Characters", "Dummy") if not dummy then return end
+    local hrp = dummy:FindFirstChild("HumanoidRootPart") if not hrp then return end
+    ESPState.objects[dummyKey] = { drawing = CreateESPDrawing("Dummy", CONFIG.esp.colorDummy), instance = dummy, part = hrp, type = "dummy", name = "Dummy" }
+end
 
-local function MakeESPDrawing(drawType)
-    local d = Drawing.new(drawType)
-    table.insert(allESPDrawings, d)
+local function DiscoverItems()
+    local itemsFolder = SafeFind(game.Workspace, "Items") if not itemsFolder then return end
+    local seenAddresses = {}
+    for _, item in ipairs(itemsFolder:GetChildren()) do
+        if item:IsA("Part") or item:IsA("MeshPart") then
+            local address = item.Address seenAddresses[address] = true
+            if not ESPState.objects[address] then ESPState.objects[address] = { drawing = CreateESPDrawing(item.Name, CONFIG.esp.colorItems), instance = item, part = item, type = "item", name = item.Name } end
+        end
+    end
+    for address, espObj in pairs(ESPState.objects) do if espObj.type == "item" and not seenAddresses[address] then RemoveESPDrawing(espObj) ESPState.objects[address] = nil end end
+end
+
+local function DiscoverESPObjects() pcall(DiscoverDummy) pcall(DiscoverItems) end
+
+-- =====================
+-- DOMAIN HEALTH ESP
+-- =====================
+local function CreateDomainHealthDrawing()
+    local d = Drawing.new("Text")
+    d.Font = Drawing.Fonts.System
+    d.Size = 16
+    d.Color = Color3.fromRGB(255, 255, 255)
+    d.Outline = true
+    d.Center = true
+    d.Visible = false
     return d
 end
 
-for i = 1, ESP_POOL_SIZE do
-    local nameText = MakeESPDrawing('Text')
-    nameText.Outline = true  nameText.Size = 13  nameText.Visible = false  nameText.Color = Color3.fromRGB(255, 255, 255)
+local function UpdateDomainHealthESP()
+    if not CONFIG.domainHealthESP.enabled then
+        for _, entry in pairs(DomainHealthESPState.drawings) do entry.drawing.Visible = false end
+        return
+    end
+    local domainsFolder = game.Workspace:FindFirstChild("Domains")
+    local playerPos = GetPlayerPosition()
+    local nearbyThreshold = CONFIG.domainHealthESP.nearbyThreshold
+    local camera = game.Workspace.CurrentCamera
+    local vpSize = camera and camera.ViewportSize
+    local screenCenterX = vpSize and (vpSize.X / 2) or 960
+    local seenAddresses = {}
 
-    local hpBg = MakeESPDrawing('Square')
-    hpBg.Filled = true  hpBg.Visible = false  hpBg.Color = Color3.fromRGB(30, 30, 30)
+    if domainsFolder then
+        for _, domain in ipairs(domainsFolder:GetChildren()) do
+            local domainMesh = (domain.Name == "Domain" and domain:IsA("MeshPart")) and domain or domain:FindFirstChild("Domain")
+            if domainMesh then
+                local addr = domainMesh.Address
+                seenAddresses[addr] = true
 
-    local hpFill = MakeESPDrawing('Square')
-    hpFill.Filled = true  hpFill.Visible = false
+                local entry = DomainHealthESPState.drawings[addr]
+                if not entry then
+                    entry = { drawing = CreateDomainHealthDrawing() }
+                    DomainHealthESPState.drawings[addr] = entry
+                end
 
-    local hpText = MakeESPDrawing('Text')
-    hpText.Outline = true  hpText.Size = 11  hpText.Visible = false  hpText.Color = Color3.fromRGB(200, 200, 200)
+                local health = domainMesh:GetAttribute("Health") or domainMesh:GetAttribute("DomainHealth") or 0
+                entry.drawing.Text = "Domain HP: " .. math.floor(health)
 
-    local dmgText = MakeESPDrawing('Text')
-    dmgText.Outline = true  dmgText.Size = 15  dmgText.Visible = false  dmgText.Color = Color3.fromRGB(255, 70, 70)
-
-    espPool[i] = {
-        nameText = nameText,
-        hpBg     = hpBg,
-        hpFill   = hpFill,
-        hpText   = hpText,
-        dmgText  = dmgText,
-        lastHP   = nil,
-        dmgAmt   = 0,
-        dmgTime  = 0,
-        enemy    = nil,
-    }
-end
-
-local function HideESPEntry(e)
-    e.nameText.Visible = false
-    e.hpBg.Visible     = false
-    e.hpFill.Visible   = false
-    e.hpText.Visible   = false
-    e.dmgText.Visible  = false
-    e.enemy = nil
-end
-
-local function HideAllESP()
-    for i = 1, ESP_POOL_SIZE do HideESPEntry(espPool[i]) end
-end
-
-local function UpdateESP()
-    local showHealth = CONFIG.health.esp
-    local showDamage = CONFIG.damage.esp
-    if not showHealth and not showDamage then HideAllESP() return end
-
-    local cam = Workspace.CurrentCamera
-    if not cam then HideAllESP() return end
-
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then HideAllESP() return end
-
-    local enemyList = enemies:GetChildren()
-    for i = 1, ESP_POOL_SIZE do
-        local entry = espPool[i]
-        local enemy = enemyList[i]
-
-        if not enemy then
-            HideESPEntry(entry)
-        else
-            local hum = enemy:FindFirstChildOfClass("Humanoid")
-            local rootPart = enemy:FindFirstChild("HumanoidRootPart")
-                or enemy:FindFirstChild("Head")
-                or enemy:FindFirstChild("Main")
-
-            if not hum or not rootPart or hum.Health <= 0 then
-                HideESPEntry(entry)
-                entry.lastHP = nil
-            else
-                local worldPos = rootPart.Position + Vector3.new(0, 3.5, 0)
-                local screenPos, onScreen = cam:WorldToViewportPoint(worldPos)
-
-                if not onScreen then
-                    HideESPEntry(entry)
+                local dist = playerPos and CalculateDistance(playerPos, domainMesh.Position) or math.huge
+                if dist <= nearbyThreshold then
+                    entry.drawing.Position = Vector2.new(screenCenterX, 50)
+                    entry.drawing.Visible = true
                 else
-                    local sx, sy = screenPos.X, screenPos.Y
-                    local depth = math.max(screenPos.Z, 1)
-                    local barW = clamp(math.floor(800 / depth), 30, 80)
-                    local barH = 4
+                    local screenPos, onScreen = WorldToScreen(domainMesh.Position)
+                    entry.drawing.Visible = onScreen
+                    if onScreen then entry.drawing.Position = screenPos end
+                end
+            end
+        end
+    end
 
-                    if showHealth then
-                        local eName = enemy.Name
-                        local nameW = #eName * ESP_CHAR_WIDTH
-                        entry.nameText.Text     = eName
-                        entry.nameText.Position = Vector2.new(sx - nameW / 2, sy - 28)
-                        entry.nameText.Visible  = true
-
-                        entry.hpBg.Position = Vector2.new(sx - barW / 2, sy - 14)
-                        entry.hpBg.Size     = Vector2.new(barW, barH)
-                        entry.hpBg.Visible  = true
-
-                        local pct = clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
-                        entry.hpFill.Position = Vector2.new(sx - barW / 2, sy - 14)
-                        entry.hpFill.Size     = Vector2.new(math.max(barW * pct, 0), barH)
-                        entry.hpFill.Color    = Color3.fromRGB(255 * (1 - pct), 255 * pct, 0)
-                        entry.hpFill.Visible  = true
-
-                        local hpStr = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
-                        local hpStrW = #hpStr * ESP_CHAR_WIDTH
-                        entry.hpText.Text     = hpStr
-                        entry.hpText.Position = Vector2.new(sx - hpStrW / 2, sy - 8)
-                        entry.hpText.Visible  = true
-                    else
-                        entry.nameText.Visible = false
-                        entry.hpBg.Visible     = false
-                        entry.hpFill.Visible   = false
-                        entry.hpText.Visible   = false
-                    end
-
-                    if showDamage then
-                        if entry.lastHP and entry.lastHP > hum.Health then
-                            entry.dmgAmt  = math.floor(entry.lastHP - hum.Health)
-                            entry.dmgTime = os.clock()
-                        end
-                        entry.lastHP = hum.Health
-
-                        local elapsed = os.clock() - entry.dmgTime
-                        if entry.dmgAmt > 0 and elapsed < 1.8 then
-                            local fadeT  = clamp(1 - elapsed / 1.8, 0, 1)
-                            local floatY = (1 - fadeT) * 35
-                            local dStr   = "-" .. tostring(entry.dmgAmt)
-                            local dStrW  = #dStr * (ESP_CHAR_WIDTH + 1)
-                            entry.dmgText.Text         = dStr
-                            entry.dmgText.Position     = Vector2.new(sx - dStrW / 2, sy - 40 - floatY)
-                            entry.dmgText.Transparency = fadeT
-                            entry.dmgText.Visible      = true
-                        else
-                            entry.dmgText.Visible = false
-                            if elapsed >= 1.8 then entry.dmgAmt = 0 end
-                        end
-                    else
-                        entry.dmgText.Visible = false
-                    end
-
-                    entry.enemy = enemy
-                end -- onScreen
-            end -- hum valid
-        end -- enemy exists
+    for addr, entry in pairs(DomainHealthESPState.drawings) do
+        if not seenAddresses[addr] then
+            entry.drawing:Remove()
+            DomainHealthESPState.drawings[addr] = nil
+        end
     end
 end
 
-local function DestroyESP()
-    for _, d in ipairs(allESPDrawings) do pcall(function() d:Remove() end) end
-    table.clear(allESPDrawings)
-    table.clear(espPool)
+-- =====================
+-- DOMAIN VOTE TRACKER (Hiromi)
+-- =====================
+local function HasHiromiMoveset() return HasMoveset("Hiromi") end
+local function HasChooseUI() return SafeFind(LocalPlayer, "PlayerGui", "Choose") ~= nil end
+
+local function FindPlayerDomain()
+    local domainsFolder = game.Workspace:FindFirstChild("Domains") if not domainsFolder then return nil end
+    local playerPos = GetPlayerPosition() if not playerPos then return nil end
+    local closestDomain, closestDistance = nil, math.huge
+    for _, domain in ipairs(domainsFolder:GetChildren()) do
+        local domainMesh = (domain.Name == "Domain" and domain:IsA("MeshPart")) and domain or domain:FindFirstChild("Domain")
+        if domainMesh then
+            local checkPart = domainMesh:FindFirstChild("DomainCollider") or domainMesh
+            if checkPart and checkPart:IsA("BasePart") then local distance = CalculateDistance(playerPos, checkPart.Position) if distance < closestDistance then closestDistance = distance closestDomain = domainMesh end end
+        end
+    end
+    return closestDomain
 end
 
--- ===================================================================
---                     WATERMARK STATUS
--- ===================================================================
+local function GetDomainVotes(domain)
+    if not domain then return 0, 0, 0 end
+    return domain:GetAttribute("ConfessCount") or 0, domain:GetAttribute("SilenceCount") or 0, domain:GetAttribute("DenialCount") or 0
+end
+
+local function CreateVoteDrawings()
+    local function createDrawing() local d = Drawing.new("Text") d.Font = Drawing.Fonts.System d.Text = "0" d.Size = 24 d.Color = Color3.fromRGB(255, 0, 0) d.Outline = true d.Center = true d.Visible = false return d end
+    DomainState.confessDrawing = DomainState.confessDrawing or createDrawing()
+    DomainState.silenceDrawing = DomainState.silenceDrawing or createDrawing()
+    DomainState.denialDrawing = DomainState.denialDrawing or createDrawing()
+end
+
+local function HideVoteDrawings()
+    if DomainState.confessDrawing then DomainState.confessDrawing.Visible = false end
+    if DomainState.silenceDrawing then DomainState.silenceDrawing.Visible = false end
+    if DomainState.denialDrawing then DomainState.denialDrawing.Visible = false end
+end
+
+local function DestroyVoteDrawings()
+    if DomainState.confessDrawing then DomainState.confessDrawing:Remove() DomainState.confessDrawing = nil end
+    if DomainState.silenceDrawing then DomainState.silenceDrawing:Remove() DomainState.silenceDrawing = nil end
+    if DomainState.denialDrawing then DomainState.denialDrawing:Remove() DomainState.denialDrawing = nil end
+end
+
+local function UpdateVoteDisplay(confess, silence, denial)
+    if not DomainState.confessDrawing then return end
+    local maxVote = math.max(confess, silence, denial)
+    local tieCount = (confess == maxVote and 1 or 0) + (silence == maxVote and 1 or 0) + (denial == maxVote and 1 or 0)
+    local colorRed = Color3.fromRGB(255, 50, 50) local colorGreen = Color3.fromRGB(50, 255, 50) local colorYellow = Color3.fromRGB(255, 255, 50)
+    local function getColor(count) if maxVote == 0 then return colorRed end if count ~= maxVote then return colorRed end return tieCount >= 2 and colorYellow or colorGreen end
+    DomainState.confessDrawing.Text = tostring(confess) DomainState.confessDrawing.Color = getColor(confess)
+    DomainState.silenceDrawing.Text = tostring(silence) DomainState.silenceDrawing.Color = getColor(silence)
+    DomainState.denialDrawing.Text = tostring(denial) DomainState.denialDrawing.Color = getColor(denial)
+end
+
+local function GetChooseButtonPositions()
+    local chooseUI = SafeFind(LocalPlayer, "PlayerGui", "Choose") if not chooseUI then return nil, nil, nil end
+    local function getPos(name) local btn = chooseUI:FindFirstChild(name) if btn then local pos, size = btn.AbsolutePosition, btn.AbsoluteSize return Vector2.new(pos.X + size.X/2, pos.Y - 30) end return nil end
+    return getPos("Confess"), getPos("Silence"), getPos("Denial")
+end
+
+local function PositionVoteDrawings()
+    if not DomainState.confessDrawing then return end
+    local cPos, sPos, dPos = GetChooseButtonPositions()
+    DomainState.confessDrawing.Visible = cPos ~= nil if cPos then DomainState.confessDrawing.Position = cPos end
+    DomainState.silenceDrawing.Visible = sPos ~= nil if sPos then DomainState.silenceDrawing.Position = sPos end
+    DomainState.denialDrawing.Visible = dPos ~= nil if dPos then DomainState.denialDrawing.Position = dPos end
+end
+
+local function ResetDomainState() DomainState.isActive = false DomainState.trackedDomain = nil DomainState.waitingForChooseUI = false DomainState.waitStartTime = 0 DomainState.confessCount = 0 DomainState.silenceCount = 0 DomainState.denialCount = 0 HideVoteDrawings() end
+
+local function ProcessDomainVotes()
+    if not CONFIG.domainVotes.enabled then if DomainState.isActive then ResetDomainState() end return end
+    if not HasHiromiMoveset() then if DomainState.isActive or DomainState.waitingForChooseUI then ResetDomainState() end return end
+    local currentTime = GetTime()
+    local gPressed = iskeypressed(KEYS.G)
+    if gPressed and not DomainState.gWasPressed and not DomainState.isActive and not DomainState.waitingForChooseUI then DomainState.waitingForChooseUI = true DomainState.waitStartTime = currentTime end
+    DomainState.gWasPressed = gPressed
+    if DomainState.waitingForChooseUI then
+        if currentTime - DomainState.waitStartTime > 6.0 then DomainState.waitingForChooseUI = false return end
+        if HasChooseUI() then DomainState.waitingForChooseUI = false local domain = FindPlayerDomain() if domain then DomainState.isActive = true DomainState.trackedDomain = domain CreateVoteDrawings() PositionVoteDrawings() UpdateVoteDisplay(0, 0, 0) end end
+        return
+    end
+    if DomainState.isActive then
+        if not HasChooseUI() or not DomainState.trackedDomain or not DomainState.trackedDomain.Parent then ResetDomainState() return end
+        local confess, silence, denial = GetDomainVotes(DomainState.trackedDomain)
+        if confess ~= DomainState.confessCount or silence ~= DomainState.silenceCount or denial ~= DomainState.denialCount then DomainState.confessCount = confess DomainState.silenceCount = silence DomainState.denialCount = denial UpdateVoteDisplay(confess, silence, denial) end
+        PositionVoteDrawings()
+    end
+end
+
+-- =====================
+-- WATERMARK STATUS
+-- =====================
 local function GetStatus()
-    local p = {}
-    if CONFIG.statMod.enabled     then table.insert(p, "Stats")   end
-    if CONFIG.hitbox.enabled      then table.insert(p, "Hitbox")  end
-    if CONFIG.damage.esp          then table.insert(p, "DmgESP")  end
-    if CONFIG.damage.heavyForce   then table.insert(p, "HvyDmg")  end
-    if CONFIG.parry.auto          then table.insert(p, "AParry")  end
-    if CONFIG.parry.disableFlash  then table.insert(p, "NoFlash") end
-    if CONFIG.parry.forceReflector then table.insert(p, "Reflect") end
-    if CONFIG.health.autoHeal     then table.insert(p, "AHeal")   end
-    if CONFIG.health.esp          then table.insert(p, "HP-ESP")  end
-    if CONFIG.stamina.infinite    then table.insert(p, "InfStam") end
-    if #p == 0 then return "Idle" end
-    return table.concat(p, " | ")
+    local parts = {}
+    if CONFIG.autoQTE.enabled then local t = GetTime() if iskeypressed(KEYS.F) then table.insert(parts, "QTE: PAUSED") elseif QTEState.detectedKey ~= "" and (t - QTEState.detectedTime) < QTEState.displayDuration then table.insert(parts, "QTE: " .. QTEState.detectedKey) else table.insert(parts, "QTE: ON") end end
+    if CONFIG.ratioQTE.enabled and HasSalarymanMoveset() then if RatioState.isScanning then table.insert(parts, "Ratio: SCAN") elseif RatioState.trackedRatioValue then table.insert(parts, "Ratio: ACTIVE") else table.insert(parts, "Ratio: ON") end end
+    if CONFIG.perfectSwap.enabled and HasPerfectSwapMoveset() then if SwapState.swapConfirmed then table.insert(parts, "Swap: CONFIRMED") elseif SwapState.isScanning then table.insert(parts, "Swap: SCANNING") else table.insert(parts, "Swap: READY") end end
+    if CONFIG.esp.enabled then local count = 0 for _ in pairs(ESPState.objects) do count = count + 1 end table.insert(parts, "ESP: " .. count) end
+    if CONFIG.domainVotes.enabled and HasHiromiMoveset() then if DomainState.isActive then table.insert(parts, "Domain: ACTIVE") elseif DomainState.waitingForChooseUI then table.insert(parts, "Domain: WAIT") else table.insert(parts, "Domain: ON") end end
+    local moveset = GetMovesetAttr()
+    if CONFIG.autoBlackflashItadori.enabled and moveset == "Itadori" then table.insert(parts, BlackflashItadoriState.waiting and "BF: ARMED" or "BF: ON") end
+    if CONFIG.autoBlackflashMahito.enabled  and moveset == "Mahito"  then table.insert(parts, BlackflashMahitoState.waiting  and "BF: ARMED" or "BF: ON") end
+    if CONFIG.autoPerfectBlock.enabled then
+        local now = GetTime()
+        if PendingBlock.pressAt then
+            table.insert(parts, "Block: ARMED")
+        elseif (now - PerfectBlockState.lastTriggerTime) < 0.6 then
+            local c = PerfectBlockState.lastCadence
+            table.insert(parts, c > 0 and string.format("Block: HIT %.0fms", c * 1000) or "Block: HIT")
+        else
+            table.insert(parts, "Block: ON")
+        end
+    end
+    if CONFIG.autoCounter.enabled and moveset and COUNTER_MOVES[moveset] then
+        local recent = (GetTime() - CounterState.lastTriggerTime) < 0.6
+        table.insert(parts, recent and "Counter: HIT" or "Counter: ON")
+    end
+    return #parts == 0 and "Idle" or table.concat(parts, " | ")
 end
 
--- ===================================================================
---                       UI SETUP
--- ===================================================================
-local myGui = UILib.new("CI // Matcha", Vector2.new(420, 480), {GetStatus})
+-- =====================
+-- UI SETUP
+-- =====================
+local myGui = UILib.new("JJS", Vector2.new(300, 620), {GetStatus})
 local running = true
 
--- ========== TAB 1: Main ==========
-local mainTab = myGui:Tab("Main")
+local autoTab = myGui:Tab("Automation")
 
-local statSection = myGui:Section(mainTab, "Stat Modifier")
-myGui:Checkbox(mainTab, statSection, "Enable", CONFIG.statMod.enabled, function(s)
-    CONFIG.statMod.enabled = s
-    if not s then pcall(RestoreStatMod) end
-end)
-myGui:Slider(mainTab, statSection, "Lifesteal", CONFIG.statMod.lifesteal, function(v) CONFIG.statMod.lifesteal = v end, 0, 200, 1, "")
+local qteSection = myGui:Section(autoTab, "Defense Attorney")
+myGui:Checkbox(autoTab, qteSection, "Enable Auto QTE", CONFIG.autoQTE.enabled, function(s) CONFIG.autoQTE.enabled = s end)
+myGui:Slider(autoTab, qteSection, "Reaction Delay", CONFIG.autoQTE.reactionDelay * 1000, function(v) CONFIG.autoQTE.reactionDelay = v / 1000 end, 0, 500, 5, "ms")
+myGui:Slider(autoTab, qteSection, "Post-Press Delay", CONFIG.autoQTE.postPressDelay * 1000, function(v) CONFIG.autoQTE.postPressDelay = v / 1000 end, 0, 1000, 10, "ms")
+myGui:Slider(autoTab, qteSection, "Deviation", CONFIG.autoQTE.deviation * 1000, function(v) CONFIG.autoQTE.deviation = v / 1000 end, 0, 200, 5, "ms")
+myGui:Slider(autoTab, qteSection, "Re-press Interval", CONFIG.autoQTE.repressInterval * 1000, function(v) CONFIG.autoQTE.repressInterval = v / 1000 end, 200, 800, 10, "ms")
 
-local hitboxSection = myGui:Section(mainTab, "Hitbox Expander")
-myGui:Checkbox(mainTab, hitboxSection, "Enable", CONFIG.hitbox.enabled, function(s)
-    CONFIG.hitbox.enabled = s
-    if not s then pcall(RestoreHitbox) end
-end)
-myGui:Slider(mainTab, hitboxSection, "Size", CONFIG.hitbox.size, function(v) CONFIG.hitbox.size = v end, 5, 100, 1, " studs")
-myGui:Slider(mainTab, hitboxSection, "Mark Size", CONFIG.hitbox.markSize, function(v) CONFIG.hitbox.markSize = v end, 5, 150, 1, " studs")
+local ratioSection = myGui:Section(autoTab, "Nanami")
+myGui:Checkbox(autoTab, ratioSection, "Enable Auto QTE", CONFIG.ratioQTE.enabled, function(s) CONFIG.ratioQTE.enabled = s if not s then RatioState.trackedTarget = nil RatioState.trackedRatioValue = nil RatioState.isScanning = false RatioState.hasTriggered = false end end)
 
--- ========== TAB 2: Combat ==========
-local combatTab = myGui:Tab("Combat")
+local swapSection = myGui:Section(autoTab, "Todo")
+myGui:Checkbox(autoTab, swapSection, "Auto Perfect Swap", CONFIG.perfectSwap.enabled, function(s) CONFIG.perfectSwap.enabled = s if not s then ResetSwapState() end end)
 
-local damageSection = myGui:Section(combatTab, "Damage")
-myGui:Checkbox(combatTab, damageSection, "Damage ESP", CONFIG.damage.esp, function(s)
-    CONFIG.damage.esp = s
-    if not s then HideAllESP() end
-end)
-myGui:Checkbox(combatTab, damageSection, "Heavy Damage Force", CONFIG.damage.heavyForce, function(s)
-    CONFIG.damage.heavyForce = s
-    if not s then pcall(RestoreHeavyDamage) end
-end)
+local bfItadoriSection = myGui:Section(autoTab, "Blackflash - Itadori")
+myGui:Checkbox(autoTab, bfItadoriSection, "Enable", CONFIG.autoBlackflashItadori.enabled, function(s) CONFIG.autoBlackflashItadori.enabled = s if not s then BlackflashItadoriState.waiting = false end end)
+myGui:Checkbox(autoTab, bfItadoriSection, "Ping Adjust", CONFIG.autoBlackflashItadori.usePingCompensation, function(s) CONFIG.autoBlackflashItadori.usePingCompensation = s end)
 
-local parrySection = myGui:Section(combatTab, "Parry")
-myGui:Checkbox(combatTab, parrySection, "Auto Parry", CONFIG.parry.auto, function(s) CONFIG.parry.auto = s end)
-myGui:Slider(combatTab, parrySection, "Range", CONFIG.parry.range, function(v) CONFIG.parry.range = v end, 5, 60, 1, " studs")
-myGui:Slider(combatTab, parrySection, "Cooldown", CONFIG.parry.cooldown, function(v) CONFIG.parry.cooldown = v end, 0.1, 2.0, 0.1, "s")
-myGui:Checkbox(combatTab, parrySection, "Disable Flash", CONFIG.parry.disableFlash, function(s)
-    CONFIG.parry.disableFlash = s
-    if not s then pcall(RestoreParryFlash) end
-end)
-myGui:Checkbox(combatTab, parrySection, "Reflector Parry", CONFIG.parry.forceReflector, function(s) CONFIG.parry.forceReflector = s end)
+local bfMahitoSection = myGui:Section(autoTab, "Blackflash - Mahito")
+myGui:Checkbox(autoTab, bfMahitoSection, "Enable", CONFIG.autoBlackflashMahito.enabled, function(s) CONFIG.autoBlackflashMahito.enabled = s if not s then BlackflashMahitoState.waiting = false end end)
+myGui:Checkbox(autoTab, bfMahitoSection, "Ping Adjust", CONFIG.autoBlackflashMahito.usePingCompensation, function(s) CONFIG.autoBlackflashMahito.usePingCompensation = s end)
 
--- ========== TAB 3: Survival ==========
-local survivalTab = myGui:Tab("Survival")
+local blockSection = myGui:Section(autoTab, "Auto Perfect Block")
+myGui:Checkbox(autoTab, blockSection, "Enable", CONFIG.autoPerfectBlock.enabled, function(s) CONFIG.autoPerfectBlock.enabled = s if not s then PendingBlock.pressAt = nil end end)
+myGui:Choice(autoTab, blockSection, "Mode", {CONFIG.autoPerfectBlock.mode}, function(v) if v[1] then CONFIG.autoPerfectBlock.mode = v[1] end end, {"Instant", "Predict"}, false)
+myGui:Slider(autoTab, blockSection, "Range", CONFIG.autoPerfectBlock.range, function(v) CONFIG.autoPerfectBlock.range = v end, 5, 30, 1, " studs")
+myGui:Slider(autoTab, blockSection, "Early By", CONFIG.autoPerfectBlock.earlyBy * 1000, function(v) CONFIG.autoPerfectBlock.earlyBy = v / 1000 end, 0, 400, 10, "ms")
+myGui:Slider(autoTab, blockSection, "Fallback Cadence", CONFIG.autoPerfectBlock.defaultCadence * 1000, function(v) CONFIG.autoPerfectBlock.defaultCadence = v / 1000 end, 500, 1500, 10, "ms")
+myGui:Slider(autoTab, blockSection, "Hold Time", CONFIG.autoPerfectBlock.holdTime * 1000, function(v) CONFIG.autoPerfectBlock.holdTime = v / 1000 end, 50, 400, 10, "ms")
+myGui:Slider(autoTab, blockSection, "Cooldown", CONFIG.autoPerfectBlock.cooldown * 1000, function(v) CONFIG.autoPerfectBlock.cooldown = v / 1000 end, 100, 2000, 50, "ms")
 
-local healthSection = myGui:Section(survivalTab, "Health")
-myGui:Checkbox(survivalTab, healthSection, "Auto Heal", CONFIG.health.autoHeal, function(s) CONFIG.health.autoHeal = s end)
-myGui:Slider(survivalTab, healthSection, "Threshold", CONFIG.health.threshold, function(v) CONFIG.health.threshold = v end, 5, 95, 5, "%")
-myGui:Checkbox(survivalTab, healthSection, "Health ESP", CONFIG.health.esp, function(s)
-    CONFIG.health.esp = s
-    if not s then HideAllESP() end
-end)
+local counterSection = myGui:Section(autoTab, "Auto Counter")
+myGui:Checkbox(autoTab, counterSection, "Enable", CONFIG.autoCounter.enabled, function(s) CONFIG.autoCounter.enabled = s if not s then PendingCounter.pressAt = nil end end)
+myGui:Checkbox(autoTab, counterSection, "Prefer Over Block", CONFIG.autoCounter.preferOverBlock, function(s) CONFIG.autoCounter.preferOverBlock = s end)
+myGui:Slider(autoTab, counterSection, "Range", CONFIG.autoCounter.range, function(v) CONFIG.autoCounter.range = v end, 5, 30, 1, " studs")
+myGui:Slider(autoTab, counterSection, "React Delay", CONFIG.autoCounter.reactDelay * 1000, function(v) CONFIG.autoCounter.reactDelay = v / 1000 end, 0, 200, 5, "ms")
+myGui:Slider(autoTab, counterSection, "Cooldown", CONFIG.autoCounter.cooldown * 1000, function(v) CONFIG.autoCounter.cooldown = v / 1000 end, 200, 3000, 50, "ms")
 
-local staminaSection = myGui:Section(survivalTab, "Stamina")
-myGui:Checkbox(survivalTab, staminaSection, "Infinite Stamina", CONFIG.stamina.infinite, function(s) CONFIG.stamina.infinite = s end)
+local threatSection = myGui:Section(autoTab, "Threat Detection")
+myGui:Checkbox(autoTab, threatSection, "Include Dummies", CONFIG.threat.includeDummy, function(s) CONFIG.threat.includeDummy = s end)
+myGui:Checkbox(autoTab, threatSection, "React To M2", CONFIG.threat.reactToM2, function(s) CONFIG.threat.reactToM2 = s end)
 
--- ========== TAB 4: Utility ==========
-local utilTab = myGui:Tab("Util")
+local espTab = myGui:Tab("ESP")
+local espSection = myGui:Section(espTab, "ESP Settings")
+myGui:Checkbox(espTab, espSection, "Enable ESP", CONFIG.esp.enabled, function(s) CONFIG.esp.enabled = s if not s then for _, obj in pairs(ESPState.objects) do if obj.drawing then obj.drawing.Visible = false end end end end)
+myGui:Checkbox(espTab, espSection, "Dummy ESP", CONFIG.esp.dummy, function(s) CONFIG.esp.dummy = s end)
+myGui:Checkbox(espTab, espSection, "Items ESP", CONFIG.esp.items, function(s) CONFIG.esp.items = s end)
+myGui:Slider(espTab, espSection, "Update Rate", CONFIG.esp.updateRate, function(v) CONFIG.esp.updateRate = v end, 10, 144, 5, "fps")
+
+local colorSection = myGui:Section(espTab, "ESP Colors")
+-- Picker callbacks hand back a Color3; config stores {r,g,b} arrays for
+-- Color3.fromRGB(unpack(...)) consumers. Convert here or ESP dies on first use.
+myGui:Colorpicker(espTab, colorSection, "Dummy Color", CONFIG.esp.colorDummy, function(c) CONFIG.esp.colorDummy = {math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)} end)
+myGui:Colorpicker(espTab, colorSection, "Items Color", CONFIG.esp.colorItems, function(c) CONFIG.esp.colorItems = {math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)} end)
+
+local domainHPSection = myGui:Section(espTab, "Domain Health")
+myGui:Checkbox(espTab, domainHPSection, "Enable", CONFIG.domainHealthESP.enabled, function(s) CONFIG.domainHealthESP.enabled = s if not s then for _, entry in pairs(DomainHealthESPState.drawings) do entry.drawing.Visible = false end end end)
+
+local utilTab = myGui:Tab("Utility")
+local domainSection = myGui:Section(utilTab, "Hiromi")
+myGui:Checkbox(utilTab, domainSection, "Vote Tracker", CONFIG.domainVotes.enabled, function(s) CONFIG.domainVotes.enabled = s if not s then ResetDomainState() end end)
 
 local scriptSection = myGui:Section(utilTab, "Script")
-myGui:Button(utilTab, scriptSection, "Restore Hitboxes", function() pcall(RestoreHitbox) end)
-myGui:Button(utilTab, scriptSection, "Restore Heavy Dmg", function() pcall(RestoreHeavyDamage) end)
-myGui:Button(utilTab, scriptSection, "Restore Flash FX", function() pcall(RestoreParryFlash) end)
+myGui:Checkbox(utilTab, scriptSection, "Unload Script", false, function(s) if s then running = false ClearAllESP() DestroyVoteDrawings() for _, entry in pairs(DomainHealthESPState.drawings) do entry.drawing:Remove() end DomainHealthESPState.drawings = {} myGui:Destroy() end end)
 
-local infoSection = myGui:Section(utilTab, "Info")
-myGui:Button(utilTab, infoSection, "Print Remotes Found", function()
-    for name, remote in pairs(Remotes) do
-        if remote then
-            print("[CI] Remote: " .. name .. " -> " .. tostring(remote:GetFullName()))
+myGui:CreateSettingsTab("Settings")
+
+-- =====================
+-- INITIALIZATION
+-- =====================
+print("Script Loaded.")
+
+-- =====================
+-- MAIN LOOPS
+-- =====================
+spawn(function() while running do myGui:Step() task.wait() end end)
+spawn(function()
+    while running do
+        if CONFIG.autoQTE.enabled and not iskeypressed(KEYS.F) then
+            if ProcessQTE() then
+                local delay = CONFIG.autoQTE.postPressDelay
+                if CONFIG.autoQTE.deviation > 0 then
+                    delay = delay + (math.random() * 2 - 1) * CONFIG.autoQTE.deviation
+                end
+                task.wait(math.max(0, delay))
+            else
+                task.wait(0.03)
+            end
         else
-            print("[CI] Remote: " .. name .. " -> NOT FOUND")
+            task.wait(0.1)
         end
     end
 end)
-myGui:Checkbox(utilTab, infoSection, "Unload", false, function(s)
-    if s then
-        running = false
-        pcall(RestoreStatMod)
-        pcall(RestoreHitbox)
-        pcall(RestoreHeavyDamage)
-        pcall(RestoreParryFlash)
-        HideAllESP()
-        DestroyESP()
-        myGui:Destroy()
-    end
-end)
 
--- ===================================================================
---                            INIT
--- ===================================================================
-print("[CI] Combat Initiation loaded.")
-print("[CI] Remotes found:")
-for name, remote in pairs(Remotes) do
-    print("  " .. name .. ": " .. (remote and remote:GetFullName() or "NOT FOUND"))
-end
-
--- ===================================================================
---                         MAIN LOOPS
--- ===================================================================
--- UI render (every frame)
 spawn(function()
     while running do
-        myGui:Step()
-        task.wait()
+        pcall(UpdateESPPositions)
+        pcall(UpdateDomainHealthESP)
+        task.wait(1 / math.max(1, CONFIG.esp.updateRate))
     end
 end)
+spawn(function() while running do pcall(DiscoverESPObjects) task.wait(0.5) end end)
+spawn(function() while running do pcall(ProcessRatioQTE) task.wait(0.016) end end)
+spawn(function() while running do pcall(ProcessPerfectSwap) task.wait(0.01) end end)
+spawn(function() while running do pcall(ProcessDomainVotes) task.wait(0.05) end end)
+spawn(function() while running do currentPing = GetPing() task.wait(1) end end)
+spawn(function() while running do pcall(ProcessAutoBlackflashItadori) task.wait() end end)
+spawn(function() while running do pcall(ProcessAutoBlackflashMahito) task.wait() end end)
+spawn(function() while running do pcall(ProcessThreats) task.wait(0.02) end end)
 
--- ESP render (every frame, separate from UI for clarity)
-spawn(function()
-    while running do
-        pcall(UpdateESP)
-        task.wait()
-    end
-end)
-
--- Stat re-apply: throttled to 0.1s
-spawn(function()
-    while running do
-        if CONFIG.statMod.enabled then pcall(ApplyStatMod) end
-        task.wait(0.1)
-    end
-end)
-
--- Hitbox re-apply: throttled to 0.1s
-spawn(function()
-    while running do
-        if CONFIG.hitbox.enabled then pcall(ApplyHitbox) end
-        task.wait(0.1)
-    end
-end)
-
--- Heavy damage force: throttled to 0.1s
-spawn(function()
-    while running do
-        if CONFIG.damage.heavyForce then pcall(ApplyHeavyDamage) end
-        task.wait(0.1)
-    end
-end)
-
--- Infinite stamina: throttled to 0.2s
-spawn(function()
-    while running do
-        if CONFIG.stamina.infinite then pcall(ApplyInfiniteStamina) end
-        task.wait(0.2)
-    end
-end)
-
--- Auto heal: throttled to 0.3s
-spawn(function()
-    while running do
-        if CONFIG.health.autoHeal then pcall(ApplyAutoHeal) end
-        task.wait(0.3)
-    end
-end)
-
--- Auto parry: needs fast polling (~0.05s) for tight timing
-spawn(function()
-    while running do
-        if CONFIG.parry.auto then pcall(ApplyAutoParry) end
-        task.wait(0.05)
-    end
-end)
-
--- Parry flash disabler: throttled to 0.1s
-spawn(function()
-    while running do
-        if CONFIG.parry.disableFlash then pcall(ApplyParryFlashDisable) end
-        task.wait(0.1)
-    end
-end)
-
--- Keep-alive
 while running do task.wait(0.1) end
